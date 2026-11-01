@@ -45,6 +45,12 @@ function atualizarInterfaceUsuario() {
         document.getElementById('profileBio').innerText = usuarioLogado.bio || 'Sem biografia.';
         document.getElementById('myAvatarImg').src = usuarioLogado.foto || 'https://via.placeholder.com/150';
         document.getElementById('editBio').value = usuarioLogado.bio || '';
+
+        // Contadores sociais
+        const seguidores = usuarioLogado.seguidores || [];
+        const seguindo = usuarioLogado.seguindo || [];
+        document.getElementById('statSeguidores').innerText = seguidores.length;
+        document.getElementById('statSeguindo').innerText = seguindo.length;
     } else {
         userStatus.innerHTML = `<span>Visitante</span>`;
         authBox.style.display = 'block';
@@ -172,6 +178,11 @@ async function carregarPosts() {
         feed.innerHTML = '';
 
         const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
+        const bloqueadosDoUsuario = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
+        const seguindoDoUsuario = (usuarioLogado && usuarioLogado.seguindo) ? usuarioLogado.seguindo : [];
+
+        // Filtra posts de usuários bloqueados
+        posts = posts.filter(p => !bloqueadosDoUsuario.includes(parseInt(p.autorId)));
 
         if (abaAtual === 'salvos') {
             posts = posts.filter(p => salvosDoUsuario.includes(parseInt(p.id)));
@@ -179,7 +190,7 @@ async function carregarPosts() {
 
         if (posts.length === 0) {
             feed.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
-                ${abaAtual === 'salvos' ? 'Você ainda não salvou nenhum post.' : 'Nenhum post publicado ainda.'}
+                ${abaAtual === 'salvos' ? 'Você ainda não salvou nenhum post.' : 'Nenhum post disponível no momento.'}
             </p>`;
             return;
         }
@@ -189,6 +200,8 @@ async function carregarPosts() {
             const comentariosArray = post.comentarios || [];
             const curtiu = usuarioLogado && curtidasArray.includes(parseInt(usuarioLogado.id));
             const salvou = salvosDoUsuario.includes(parseInt(post.id));
+            const ehMeuPost = usuarioLogado && parseInt(post.autorId) === parseInt(usuarioLogado.id);
+            const jaSegue = seguindoDoUsuario.includes(parseInt(post.autorId));
 
             let comentariosHTML = '';
             comentariosArray.forEach(c => {
@@ -203,15 +216,30 @@ async function carregarPosts() {
             postElement.classList.add('card', 'post');
             postElement.innerHTML = `
                 <div class="post-header">
-                    <img src="${post.autorFoto}" class="avatar-post" alt="Avatar">
-                    <div>
-                        <strong>${post.autorNome}</strong>
-                        <small>• ${post.criadoEm}</small>
+                    <div class="post-user-info">
+                        <img src="${post.autorFoto}" class="avatar-post" alt="Avatar">
+                        <div>
+                            <strong>${post.autorNome}</strong>
+                            <small>• ${post.criadoEm}</small>
+                        </div>
                     </div>
+                    
+                    ${(usuarioLogado && !ehMeuPost) ? `
+                        <div class="post-user-actions">
+                            <button class="btn-follow ${jaSegue ? 'following' : ''}" onclick="alternarSeguir(${post.autorId}, this)">
+                                ${jaSegue ? 'Seguindo' : '+ Seguir'}
+                            </button>
+                            <button class="btn-block" onclick="bloquearUsuario(${post.autorId}, '${post.autorNome}')" title="Bloquear usuário">
+                                🚫
+                            </button>
+                        </div>
+                    ` : ''}
                 </div>
+
                 <div class="post-body">
                     ${post.conteudo}
                 </div>
+
                 <div class="post-footer">
                     <button class="btn-action ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
                         ❤️ <span>${curtidasArray.length}</span> curtidas
@@ -237,6 +265,56 @@ async function carregarPosts() {
         });
     } catch (err) {
         console.error(err);
+    }
+}
+
+async function alternarSeguir(alvoId, botao) {
+    if (!usuarioLogado) return alert('Faça login para seguir pessoas!');
+
+    try {
+        const resposta = await fetch(`/api/usuarios/${alvoId}/seguir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meuId: parseInt(usuarioLogado.id) })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.seguindo = dados.seguindo;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            
+            botao.classList.toggle('following', dados.seguindoAgora);
+            botao.innerText = dados.seguindoAgora ? 'Seguindo' : '+ Seguir';
+            
+            document.getElementById('statSeguindo').innerText = dados.seguindo.length;
+        } else {
+            alert(dados.erro);
+        }
+    } catch {
+        alert("Erro ao seguir usuário.");
+    }
+}
+
+async function bloquearUsuario(alvoId, nomeAlvo) {
+    if (!usuarioLogado) return;
+    if (!confirm(`Deseja realmente bloquear ${nomeAlvo}? As postagens dele sumirão do seu feed.`)) return;
+
+    try {
+        const resposta = await fetch(`/api/usuarios/${alvoId}/bloquear`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meuId: parseInt(usuarioLogado.id) })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.bloqueados = dados.bloqueados;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            alert(`${nomeAlvo} foi bloqueado.`);
+            carregarPosts(); // Recarrega o feed sem os posts dele
+        }
+    } catch {
+        alert("Erro ao bloquear usuário.");
     }
 }
 

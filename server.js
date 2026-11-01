@@ -17,12 +17,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static(__dirname));
 
-// Sincroniza tabelas e garante colunas novas
 async function iniciarBanco() {
-    if (!connectionString) {
-        console.log("DATABASE_URL não configurada. Verifique as variáveis de ambiente no Render.");
-        return;
-    }
+    if (!connectionString) return;
     try {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -32,7 +28,10 @@ async function iniciarBanco() {
                 senha TEXT NOT NULL,
                 foto TEXT,
                 bio TEXT,
-                salvos JSONB DEFAULT '[]'::jsonb
+                salvos JSONB DEFAULT '[]'::jsonb,
+                seguindo JSONB DEFAULT '[]'::jsonb,
+                seguidores JSONB DEFAULT '[]'::jsonb,
+                bloqueados JSONB DEFAULT '[]'::jsonb
             );
 
             CREATE TABLE IF NOT EXISTS posts (
@@ -45,23 +44,24 @@ async function iniciarBanco() {
                 criado_em TEXT NOT NULL
             );
 
-            -- Garante que colunas adicionadas em atualizações existam
+            -- Garante a existência das novas colunas sociais
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salvos JSONB DEFAULT '[]'::jsonb;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguindo JSONB DEFAULT '[]'::jsonb;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguidores JSONB DEFAULT '[]'::jsonb;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bloqueados JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS comentarios JSONB DEFAULT '[]'::jsonb;
         `);
-        console.log("Banco de dados sincronizado e pronto!");
+        console.log("Banco de dados sincronizado com Sistema de Seguidores e Bloqueios!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
 }
 iniciarBanco();
 
-// 1. Cadastro
+// 1. Cadastrar
 app.post('/api/cadastrar', async (req, res) => {
     const { nome, email, senha } = req.body;
-    if (!nome || !email || !senha) {
-        return res.status(400).json({ erro: "Preencha todos os campos!" });
-    }
+    if (!nome || !email || !senha) return res.status(400).json({ erro: "Preencha todos os campos!" });
 
     try {
         const senhaHash = bcrypt.hashSync(senha, 10);
@@ -69,18 +69,15 @@ app.post('/api/cadastrar', async (req, res) => {
         const bioPadrao = "Olá! Estou na rede social.";
 
         const resultado = await pool.query(
-            `INSERT INTO usuarios (nome, email, senha, foto, bio, salvos) 
-             VALUES ($1, $2, $3, $4, $5, '[]'::jsonb) 
-             RETURNING id, nome, email, foto, bio, salvos`,
+            `INSERT INTO usuarios (nome, email, senha, foto, bio, salvos, seguindo, seguidores, bloqueados) 
+             VALUES ($1, $2, $3, $4, $5, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb) 
+             RETURNING id, nome, email, foto, bio, salvos, seguindo, seguidores, bloqueados`,
             [nome, email, senhaHash, fotoPadrao, bioPadrao]
         );
 
         res.status(201).json({ mensagem: "Conta criada com sucesso!", usuario: resultado.rows[0] });
     } catch (err) {
-        if (err.code === '23505') {
-            return res.status(400).json({ erro: "Este e-mail já está cadastrado." });
-        }
-        console.error(err);
+        if (err.code === '23505') return res.status(400).json({ erro: "Este e-mail já está cadastrado." });
         res.status(500).json({ erro: "Erro ao cadastrar usuário." });
     }
 });
@@ -99,12 +96,11 @@ app.post('/api/login', async (req, res) => {
         const { senha: _, ...usuarioSemSenha } = usuario;
         res.json({ mensagem: "Login realizado com sucesso!", usuario: usuarioSemSenha });
     } catch (err) {
-        console.error(err);
         res.status(500).json({ erro: "Erro no login." });
     }
 });
 
-// 3. Atualizar Foto e Bio
+// 3. Atualizar Perfil
 app.put('/api/usuarios/:id', async (req, res) => {
     const id = req.params.id;
     const { foto, bio } = req.body;
@@ -112,25 +108,96 @@ app.put('/api/usuarios/:id', async (req, res) => {
     try {
         const resultado = await pool.query(
             `UPDATE usuarios SET foto = COALESCE($1, foto), bio = COALESCE($2, bio) 
-             WHERE id = $3 RETURNING id, nome, email, foto, bio, salvos`,
+             WHERE id = $3 RETURNING id, nome, email, foto, bio, salvos, seguindo, seguidores, bloqueados`,
             [foto, bio, id]
         );
         res.json({ mensagem: "Perfil atualizado!", usuario: resultado.rows[0] });
     } catch (err) {
-        console.error(err);
         res.status(500).json({ erro: "Erro ao atualizar perfil." });
     }
 });
 
-// 4. Salvar / Desalvar Post
+// 4. Seguir / Deixar de Seguir Usuário
+app.post('/api/usuarios/:id/seguir', async (req, res) => {
+    const alvoId = parseInt(req.params.id);
+    const { meuId } = req.body;
+
+    if (alvoId === meuId) return res.status(400).json({ erro: "Você não pode seguir a si mesmo." });
+
+    try {
+        const meuRes = await pool.query(`SELECT seguindo FROM usuarios WHERE id = $1`, [meuId]);
+        const alvoRes = await pool.query(`SELECT seguidores FROM usuarios WHERE id = $1`, [alvoId]);
+
+        if (meuRes.rows.length === 0 || alvoRes.rows.length === 0) {
+            return res.status(404).json({ erro: "Usuário não encontrado." });
+        }
+
+        let meuSeguindo = meuRes.rows[0].seguindo || [];
+        let alvoSeguidores = alvoRes.rows[0].seguidores || [];
+
+        const index = meuSeguindo.indexOf(alvoId);
+        let seguindoAgora = false;
+
+        if (index === -1) {
+            meuSeguindo.push(alvoId);
+            alvoSeguidores.push(meuId);
+            seguindoAgora = true;
+        } else {
+            meuSeguindo.splice(index, 1);
+            const alvoIndex = alvoSeguidores.indexOf(meuId);
+            if (alvoIndex !== -1) alvoSeguidores.splice(alvoIndex, 1);
+        }
+
+        await pool.query(`UPDATE usuarios SET seguindo = $1 WHERE id = $2`, [JSON.stringify(meuSeguindo), meuId]);
+        await pool.query(`UPDATE usuarios SET seguidores = $1 WHERE id = $2`, [JSON.stringify(alvoSeguidores), alvoId]);
+
+        res.json({ seguindoAgora, seguindo: meuSeguindo });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao atualizar relação de seguidores." });
+    }
+});
+
+// 5. Bloquear / Desbloquear Usuário
+app.post('/api/usuarios/:id/bloquear', async (req, res) => {
+    const alvoId = parseInt(req.params.id);
+    const { meuId } = req.body;
+
+    if (alvoId === meuId) return res.status(400).json({ erro: "Você não pode se bloquear." });
+
+    try {
+        const meuRes = await pool.query(`SELECT bloqueados, seguindo FROM usuarios WHERE id = $1`, [meuId]);
+        if (meuRes.rows.length === 0) return res.status(404).json({ erro: "Usuário não encontrado." });
+
+        let bloqueados = meuRes.rows[0].bloqueados || [];
+        let seguindo = meuRes.rows[0].seguindo || [];
+
+        const index = bloqueados.indexOf(alvoId);
+        let bloqueou = false;
+
+        if (index === -1) {
+            bloqueados.push(alvoId);
+            // Ao bloquear, deixa de seguir automaticamente
+            const segIndex = seguindo.indexOf(alvoId);
+            if (segIndex !== -1) seguindo.splice(segIndex, 1);
+            bloqueou = true;
+        } else {
+            bloqueados.splice(index, 1);
+        }
+
+        await pool.query(`UPDATE usuarios SET bloqueados = $1, seguindo = $2 WHERE id = $3`, [JSON.stringify(bloqueados), JSON.stringify(seguindo), meuId]);
+        res.json({ bloqueou, bloqueados });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao bloquear usuário." });
+    }
+});
+
+// 6. Salvar / Desalvar Post
 app.post('/api/posts/:id/salvar', async (req, res) => {
     const postId = parseInt(req.params.id);
     const { usuarioId } = req.body;
 
     try {
         const userRes = await pool.query(`SELECT salvos FROM usuarios WHERE id = $1`, [usuarioId]);
-        if (userRes.rows.length === 0) return res.status(404).json({ erro: "Usuário não encontrado." });
-
         let salvos = userRes.rows[0].salvos || [];
         const index = salvos.indexOf(postId);
         let salvou = false;
@@ -144,13 +211,12 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
 
         await pool.query(`UPDATE usuarios SET salvos = $1 WHERE id = $2`, [JSON.stringify(salvos), usuarioId]);
         res.json({ salvou, salvos });
-    } catch (err) {
-        console.error(err);
+    } catch {
         res.status(500).json({ erro: "Erro ao salvar post." });
     }
 });
 
-// 5. Listar Posts
+// 7. Listar Posts (com filtro de bloqueios)
 app.get('/api/posts', async (req, res) => {
     try {
         const query = `
@@ -164,17 +230,14 @@ app.get('/api/posts', async (req, res) => {
         const resultado = await pool.query(query);
         res.json(resultado.rows);
     } catch (err) {
-        console.error(err);
         res.status(500).json({ erro: "Erro ao buscar posts." });
     }
 });
 
-// 6. Criar Post
+// 8. Criar Post
 app.post('/api/posts', async (req, res) => {
     const { autorId, autorNome, conteudo } = req.body;
-    if (!conteudo || !autorId) {
-        return res.status(400).json({ erro: "Conteúdo e autor são obrigatórios." });
-    }
+    if (!conteudo || !autorId) return res.status(400).json({ erro: "Conteúdo e autor são obrigatórios." });
 
     const criadoEm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -187,20 +250,17 @@ app.post('/api/posts', async (req, res) => {
         );
         res.status(201).json(resultado.rows[0]);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ erro: "Erro ao salvar publicação no banco." });
+        res.status(500).json({ erro: "Erro ao salvar publicação." });
     }
 });
 
-// 7. Curtir Post
+// 9. Curtir Post
 app.post('/api/posts/:id/curtir', async (req, res) => {
     const postId = req.params.id;
     const { usuarioId } = req.body;
 
     try {
         const postResult = await pool.query(`SELECT curtidas FROM posts WHERE id = $1`, [postId]);
-        if (postResult.rows.length === 0) return res.status(404).json({ erro: "Post não encontrado." });
-
         let curtidas = postResult.rows[0].curtidas || [];
         const index = curtidas.indexOf(usuarioId);
         let curtiu = false;
@@ -214,13 +274,12 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
 
         await pool.query(`UPDATE posts SET curtidas = $1 WHERE id = $2`, [JSON.stringify(curtidas), postId]);
         res.json({ totalCurtidas: curtidas.length, curtiu });
-    } catch (err) {
-        console.error(err);
+    } catch {
         res.status(500).json({ erro: "Erro ao processar curtida." });
     }
 });
 
-// 8. Comentar Post
+// 10. Comentar Post
 app.post('/api/posts/:id/comentar', async (req, res) => {
     const postId = req.params.id;
     const { autorNome, texto } = req.body;
@@ -228,22 +287,15 @@ app.post('/api/posts/:id/comentar', async (req, res) => {
 
     try {
         const postResult = await pool.query(`SELECT comentarios FROM posts WHERE id = $1`, [postId]);
-        if (postResult.rows.length === 0) return res.status(404).json({ erro: "Post não encontrado." });
-
         let comentarios = postResult.rows[0].comentarios || [];
-        const novoComentario = {
-            id: Date.now(),
-            autorNome,
-            texto
-        };
 
+        const novoComentario = { id: Date.now(), autorNome, texto };
         comentarios.push(novoComentario);
         await pool.query(`UPDATE posts SET comentarios = $1 WHERE id = $2`, [JSON.stringify(comentarios), postId]);
 
         res.status(201).json(novoComentario);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ erro: "Erro ao salvar comentário." });
+    } catch {
+        res.status(500).json({ erro: "Erro ao comentar." });
     }
 });
 

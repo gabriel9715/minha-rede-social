@@ -153,7 +153,32 @@ button {
     word-break: break-word;
 }
 
-/* Abas de Navegação Feed / Salvos */
+/* Estatísticas de Seguidores/Seguindo */
+.social-stats {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.social-stats div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.social-stats strong {
+    font-size: 1.1rem;
+    color: var(--primary);
+}
+
+.social-stats small {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
 .profile-tabs {
     display: flex;
     gap: 8px;
@@ -243,11 +268,18 @@ body.dark-mode .btn-logout {
     font-weight: bold;
 }
 
+/* Post Header com Ações Sociais */
 .post-header {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
     margin-bottom: 10px;
+}
+
+.post-user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .avatar-post {
@@ -257,8 +289,44 @@ body.dark-mode .btn-logout {
     object-fit: cover;
 }
 
-.post-header small {
+.post-user-info small {
     color: var(--text-muted);
+}
+
+.post-user-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-follow {
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.btn-follow.following {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.btn-block {
+    background: transparent;
+    border: 1px solid #ff4757;
+    color: #ff4757;
+    padding: 4px 8px;
+    border-radius: 14px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.btn-block:hover {
+    background-color: #ff4757;
+    color: white;
 }
 
 .post-body {
@@ -297,7 +365,6 @@ body.dark-mode .btn-logout {
     color: #f7b731;
 }
 
-/* Seção de Comentários */
 .comments-section {
     margin-top: 12px;
     padding-top: 10px;

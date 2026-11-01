@@ -23,7 +23,7 @@
         
         <!-- Coluna Esquerda: Login / Meu Perfil -->
         <aside class="auth-section">
-            <!-- Painel de Login/Cadastro (quando deslogado) -->
+            <!-- Painel de Login/Cadastro -->
             <div class="card" id="authBox">
                 <h3 id="authTitle">Entrar na Conta</h3>
                 <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
@@ -36,15 +36,27 @@
                 </p>
             </div>
 
-            <!-- Painel do Meu Perfil (quando logado) -->
+            <!-- Painel do Meu Perfil -->
             <div class="card" id="profileBox" style="display: none;">
                 <div class="profile-preview">
                     <img id="myAvatarImg" src="https://via.placeholder.com/150/1877f2/ffffff?text=Perfil" alt="Avatar" class="avatar-large">
                     <h3 id="profileName">Nome</h3>
                     <p id="profileBio" class="bio-text">Sem biografia.</p>
+
+                    <!-- Estatísticas Sociais -->
+                    <div class="social-stats">
+                        <div>
+                            <strong id="statSeguidores">0</strong>
+                            <small>Seguidores</small>
+                        </div>
+                        <div>
+                            <strong id="statSeguindo">0</strong>
+                            <small>Seguindo</small>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Abas Rápidas: Feed Geral vs Salvos -->
+                <!-- Abas Rápidas -->
                 <div class="profile-tabs">
                     <button id="tabFeedBtn" class="tab-btn active" onclick="trocarAbaFeed('todos')">🌐 Feed</button>
                     <button id="tabSalvosBtn" class="tab-btn" onclick="trocarAbaFeed('salvos')">🔖 Salvos</button>
@@ -67,7 +79,6 @@
         <!-- Coluna Principal: Feed -->
         <main class="feed-section">
             
-            <!-- Criar Post (Só visível na aba 'todos') -->
             <div class="card create-post" id="boxCriarPost">
                 <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
                 <div class="post-actions">
@@ -75,10 +86,8 @@
                 </div>
             </div>
 
-            <!-- Título da visualização atual -->
-            <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente</h3>
+            <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente 🌐</h3>
 
-            <!-- Feed de Publicações -->
             <section id="feed" class="feed">
                 <!-- Posts entram aqui via script.js -->
             </section>

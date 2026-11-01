@@ -43,13 +43,11 @@ async function sincronizarPerfilDoServidor() {
 function mudarAbaPrincipal(novaAba) {
     abaAtiva = novaAba;
 
-    // Atualiza botões superiores
     document.querySelectorAll('.nav-tab-btn').forEach(btn => btn.classList.remove('active'));
     if (document.getElementById(`btnTab${capitalizar(novaAba)}`)) {
         document.getElementById(`btnTab${capitalizar(novaAba)}`).classList.add('active');
     }
 
-    // Esconde todas as visualizações
     document.getElementById('viewFeed').style.display = 'none';
     document.getElementById('viewMensagens').style.display = 'none';
     document.getElementById('viewNotificacoes').style.display = 'none';
@@ -666,4 +664,476 @@ async function postarStoryServidor(midiaUrl, midiaTipo) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                autorId: par
+                autorId: parseInt(usuarioLogado.id),
+                autorNome: usuarioLogado.nome,
+                midiaUrl,
+                midiaTipo
+            })
+        });
+
+        if (resposta.ok) {
+            alert("Story publicado com sucesso! Ele sumirá em 24h.");
+            carregarStories();
+        }
+    } catch {
+        alert("Erro ao enviar Story.");
+    }
+}
+
+async function carregarStories() {
+    try {
+        const resposta = await fetch('/api/stories');
+        storiesCarregados = await resposta.json();
+        const storiesList = document.getElementById('storiesList');
+        storiesList.innerHTML = '';
+
+        const bloqueados = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
+        const usuariosVistos = new Set();
+        
+        storiesCarregados.forEach(story => {
+            if (bloqueados.includes(parseInt(story.autorId))) return;
+            if (usuariosVistos.has(story.autorId)) return;
+            usuariosVistos.add(story.autorId);
+
+            const storyElement = document.createElement('div');
+            storyElement.classList.add('story-item');
+            storyElement.onclick = () => abrirStoryModal(story);
+
+            storyElement.innerHTML = `
+                <div class="story-avatar-wrap">
+                    <img src="${story.autorFoto}" alt="${story.autorNome}">
+                </div>
+                <small>${story.autorNome}</small>
+            `;
+            storiesList.appendChild(storyElement);
+        });
+    } catch (err) {
+        console.error("Erro stories:", err);
+    }
+}
+
+function abrirStoryModal(story) {
+    const modal = document.getElementById('storyModal');
+    const avatar = document.getElementById('modalStoryAvatar');
+    const author = document.getElementById('modalStoryAuthor');
+    const time = document.getElementById('modalStoryTime');
+    const content = document.getElementById('modalStoryContent');
+
+    avatar.src = story.autorFoto;
+    author.innerText = story.autorNome;
+
+    const horasAtras = Math.floor((Date.now() - parseInt(story.criadoEm)) / (1000 * 60 * 60));
+    time.innerText = `• ${horasAtras === 0 ? 'Agora' : horasAtras + 'h'}`;
+
+    if (story.midiaTipo === 'video') {
+        content.innerHTML = `<video id="activeStoryVideo" src="${story.midiaUrl}" autoplay playsinline></video>`;
+    } else {
+        content.innerHTML = `<img src="${story.midiaUrl}" alt="Story">`;
+    }
+
+    modal.style.display = 'flex';
+    iniciarTemporizadorStory(story.midiaTipo);
+}
+
+function iniciarTemporizadorStory(tipo) {
+    const progressFill = document.getElementById('storyProgressFill');
+    progressFill.style.width = '0%';
+
+    let duracaoSegundos = tipo === 'video' ? 10 : 5;
+    let progresso = 0;
+    const intervalo = 50;
+    const incremento = 100 / ((duracaoSegundos * 1000) / intervalo);
+
+    if (timerStoryProgress) clearInterval(timerStoryProgress);
+
+    timerStoryProgress = setInterval(() => {
+        progresso += incremento;
+        progressFill.style.width = `${progresso}%`;
+
+        if (progresso >= 100) fecharStoryModalDirect();
+    }, intervalo);
+}
+
+function fecharStoryModalDirect() {
+    if (timerStoryProgress) clearInterval(timerStoryProgress);
+    const modal = document.getElementById('storyModal');
+    document.getElementById('modalStoryContent').innerHTML = '';
+    modal.style.display = 'none';
+}
+
+function fecharStoryModal(event) {
+    if (event.target.id === 'storyModal') fecharStoryModalDirect();
+}
+
+// ================= FEED E POSTS =================
+function previsualizarMidiaPost(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    const previewContainer = document.getElementById('mediaPreviewContainer');
+    const previewContent = document.getElementById('mediaPreviewContent');
+    previewContent.innerHTML = '';
+
+    if (arquivo.size > 15 * 1024 * 1024) {
+        alert("O arquivo é muito grande! Escolha foto ou vídeo até 15MB.");
+        event.target.value = '';
+        return;
+    }
+
+    const leitor = new FileReader();
+
+    if (arquivo.type.startsWith('image/')) {
+        leitor.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const maxDim = 1080;
+                let w = img.width;
+                let h = img.height;
+
+                if (w > h && w > maxDim) {
+                    h *= maxDim / w;
+                    w = maxDim;
+                } else if (h > maxDim) {
+                    w *= maxDim / h;
+                    h = maxDim;
+                }
+
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+
+                const base64Comprimido = canvas.toDataURL('image/jpeg', 0.8);
+                postMidiaTemp = { url: base64Comprimido, tipo: 'imagem' };
+
+                previewContent.innerHTML = `<img src="${base64Comprimido}" alt="Pré-visualização">`;
+                previewContainer.style.display = 'flex';
+            };
+            img.src = e.target.result;
+        };
+        leitor.readAsDataURL(arquivo);
+
+    } else if (arquivo.type.startsWith('video/')) {
+        leitor.onload = function(e) {
+            postMidiaTemp = { url: e.target.result, tipo: 'video' };
+            previewContent.innerHTML = `<video src="${e.target.result}" controls autoplay muted></video>`;
+            previewContainer.style.display = 'flex';
+        };
+        leitor.readAsDataURL(arquivo);
+    }
+}
+
+function removerMidiaAnexada() {
+    postMidiaTemp = null;
+    document.getElementById('postMediaInput').value = '';
+    document.getElementById('mediaPreviewContent').innerHTML = '';
+    document.getElementById('mediaPreviewContainer').style.display = 'none';
+}
+
+async function carregarPosts() {
+    try {
+        const resposta = await fetch('/api/posts');
+        let posts = await resposta.json();
+        const feed = document.getElementById('feed');
+        feed.innerHTML = '';
+
+        const bloqueadosDoUsuario = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
+        posts = posts.filter(p => !bloqueadosDoUsuario.includes(parseInt(p.autorId)));
+
+        if (posts.length === 0) {
+            feed.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhum post publicado ainda.</p>`;
+            return;
+        }
+
+        renderizarPostsNoElemento(posts, feed);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function carregarPostsSalvos() {
+    try {
+        const resposta = await fetch('/api/posts');
+        let posts = await resposta.json();
+        const feedSalvos = document.getElementById('feedSalvos');
+        feedSalvos.innerHTML = '';
+
+        const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
+        posts = posts.filter(p => salvosDoUsuario.includes(parseInt(p.id)));
+
+        if (posts.length === 0) {
+            feedSalvos.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 30px;">Você ainda não salvou nenhum post.</p>`;
+            return;
+        }
+
+        renderizarPostsNoElemento(posts, feedSalvos);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderizarPostsNoElemento(posts, elementoAlvo) {
+    const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
+    const seguindoDoUsuario = (usuarioLogado && usuarioLogado.seguindo) ? usuarioLogado.seguindo : [];
+
+    posts.forEach(post => {
+        const curtidasArray = post.curtidas || [];
+        const comentariosArray = post.comentarios || [];
+        const curtiu = usuarioLogado && curtidasArray.includes(parseInt(usuarioLogado.id));
+        const salvou = salvosDoUsuario.includes(parseInt(post.id));
+        const ehMeuPost = usuarioLogado && parseInt(post.autorId) === parseInt(usuarioLogado.id);
+        const jaSegue = seguindoDoUsuario.includes(parseInt(post.autorId));
+
+        let midiaHTML = '';
+        if (post.midiaUrl) {
+            if (post.midiaTipo === 'video') {
+                midiaHTML = `
+                    <div class="post-media-container">
+                        <video src="${post.midiaUrl}" controls playsinline preload="metadata"></video>
+                    </div>
+                `;
+            } else {
+                midiaHTML = `
+                    <div class="post-media-container">
+                        <img src="${post.midiaUrl}" alt="Mídia do Post" loading="lazy">
+                    </div>
+                `;
+            }
+        }
+
+        let comentariosHTML = '';
+        comentariosArray.forEach(c => {
+            comentariosHTML += `
+                <div class="comment-item">
+                    <strong>${c.autorNome}:</strong> <span>${c.texto}</span>
+                </div>
+            `;
+        });
+
+        const postElement = document.createElement('article');
+        postElement.classList.add('card', 'post');
+        postElement.innerHTML = `
+            <div class="post-header">
+                <div class="post-user-info">
+                    <img src="${post.autorFoto}" class="avatar-post" alt="Avatar">
+                    <div>
+                        <strong>${post.autorNome}</strong>
+                        <small>• ${post.criadoEm}</small>
+                    </div>
+                </div>
+                
+                ${(usuarioLogado && !ehMeuPost) ? `
+                    <div class="post-user-actions">
+                        <button class="btn-dm" onclick="abrirDirectDoPost(${post.autorId}, '${post.autorNome}')" title="Enviar Mensagem">
+                            ✉️ Chat
+                        </button>
+                        <button class="btn-follow ${jaSegue ? 'following' : ''}" onclick="alternarSeguir(${post.autorId}, this)">
+                            ${jaSegue ? 'Seguindo' : '+ Seguir'}
+                        </button>
+                        <button class="btn-block" onclick="bloquearUsuario(${post.autorId}, '${post.autorNome}')" title="Bloquear usuário">
+                            🚫
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+
+            ${post.conteudo ? `<div class="post-body">${post.conteudo}</div>` : ''}
+            ${midiaHTML}
+
+            <div class="post-footer">
+                <button class="btn-action ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
+                    ❤️ <span>${curtidasArray.length}</span> curtidas
+                </button>
+                <button class="btn-action ${salvou ? 'saved' : ''}" onclick="salvarPost(${post.id}, this)">
+                    🔖 <span>${salvou ? 'Salvo' : 'Salvar'}</span>
+                </button>
+            </div>
+
+            <div class="comments-section">
+                <div id="comments-list-${post.id}">
+                    ${comentariosHTML}
+                </div>
+                ${usuarioLogado ? `
+                    <div class="comment-input-box">
+                        <input type="text" id="comment-input-${post.id}" placeholder="Escreva um comentário...">
+                        <button onclick="adicionarComentario(${post.id})">Enviar</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        elementoAlvo.appendChild(postElement);
+    });
+}
+
+function abrirDirectDoPost(autorId, autorNome) {
+    mudarAbaPrincipal('mensagens');
+    abrirConversaDirect(autorId, autorNome);
+}
+
+async function criarPost() {
+    if (!usuarioLogado) return alert('Faça login para poder postar!');
+    const input = document.getElementById('postContent');
+    const conteudo = input.value.trim();
+
+    if (!conteudo && !postMidiaTemp) return alert('Escreva algo ou anexe foto/vídeo!');
+
+    const payload = {
+        autorId: parseInt(usuarioLogado.id),
+        autorNome: usuarioLogado.nome,
+        conteudo: conteudo,
+        midiaUrl: postMidiaTemp ? postMidiaTemp.url : null,
+        midiaTipo: postMidiaTemp ? postMidiaTemp.tipo : null
+    };
+
+    try {
+        const resposta = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (resposta.ok) {
+            input.value = '';
+            removerMidiaAnexada();
+            carregarPosts();
+        } else {
+            const erroData = await resposta.json();
+            alert(erroData.erro || "Não foi possível publicar.");
+        }
+    } catch {
+        alert("Erro na conexão ao enviar publicação.");
+    }
+}
+
+async function curtirPost(id, botao) {
+    if (!usuarioLogado) return alert('Faça login para curtir!');
+
+    try {
+        const resposta = await fetch(`/api/posts/${id}/curtir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                usuarioId: parseInt(usuarioLogado.id),
+                usuarioNome: usuarioLogado.nome
+            })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            botao.querySelector('span').innerText = dados.totalCurtidas;
+            botao.classList.toggle('liked', dados.curtiu);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function salvarPost(id, botao) {
+    if (!usuarioLogado) return alert('Faça login para salvar publicações!');
+
+    try {
+        const resposta = await fetch(`/api/posts/${id}/salvar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                usuarioId: parseInt(usuarioLogado.id),
+                usuarioNome: usuarioLogado.nome
+            })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.salvos = dados.salvos;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            botao.classList.toggle('saved', dados.salvou);
+            botao.querySelector('span').innerText = dados.salvou ? 'Salvo' : 'Salvar';
+
+            if (abaAtiva === 'salvos') carregarPostsSalvos();
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function alternarSeguir(alvoId, botao) {
+    if (!usuarioLogado) return alert('Faça login para seguir pessoas!');
+
+    try {
+        const resposta = await fetch(`/api/usuarios/${alvoId}/seguir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                meuId: parseInt(usuarioLogado.id),
+                meuNome: usuarioLogado.nome
+            })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.seguindo = dados.seguindo;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            
+            botao.classList.toggle('following', dados.seguindoAgora);
+            botao.innerText = dados.seguindoAgora ? 'Seguindo' : '+ Seguir';
+        } else {
+            alert(dados.erro);
+        }
+    } catch {
+        alert("Erro ao seguir usuário.");
+    }
+}
+
+async function bloquearUsuario(alvoId, nomeAlvo) {
+    if (!usuarioLogado) return;
+    if (!confirm(`Deseja realmente bloquear ${nomeAlvo}?`)) return;
+
+    try {
+        const resposta = await fetch(`/api/usuarios/${alvoId}/bloquear`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meuId: parseInt(usuarioLogado.id) })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.bloqueados = dados.bloqueados;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            alert(`${nomeAlvo} foi bloqueado.`);
+            carregarStories();
+            carregarPosts();
+        }
+    } catch {
+        alert("Erro ao bloquear usuário.");
+    }
+}
+
+async function adicionarComentario(postId) {
+    const input = document.getElementById(`comment-input-${postId}`);
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    try {
+        const resposta = await fetch(`/api/posts/${postId}/comentar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                autorId: parseInt(usuarioLogado.id),
+                autorNome: usuarioLogado.nome,
+                texto
+            })
+        });
+        const novoComentario = await resposta.json();
+
+        if (resposta.ok) {
+            input.value = '';
+            const lista = document.getElementById(`comments-list-${postId}`);
+            const item = document.createElement('div');
+            item.classList.add('comment-item');
+            item.innerHTML = `<strong>${novoComentario.autorNome}:</strong> <span>${novoComentario.texto}</span>`;
+            lista.appendChild(item);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}

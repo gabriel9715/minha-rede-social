@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database(path.join(__dirname, 'banco.db'), ...
 const path = require('path');
 
 const app = express();

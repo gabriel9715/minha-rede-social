@@ -1,8 +1,12 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 let fotoPerfilComprimidaTemp = null;
-let postMidiaTemp = null; // { url: base64, tipo: 'imagem' | 'video' }
+let postMidiaTemp = null;
 let abaAtual = 'todos';
+
+// Variáveis para o Player de Story
+let storiesCarregados = [];
+let timerStoryProgress = null;
 
 window.onload = async () => {
     carregarTema();
@@ -10,6 +14,7 @@ window.onload = async () => {
         await sincronizarPerfilDoServidor();
     }
     atualizarInterfaceUsuario();
+    carregarStories();
     carregarPosts();
 };
 
@@ -51,6 +56,7 @@ function atualizarInterfaceUsuario() {
     const userStatus = document.getElementById('userStatus');
     const authBox = document.getElementById('authBox');
     const profileBox = document.getElementById('profileBox');
+    const myStoryAvatar = document.getElementById('myStoryAvatar');
 
     if (usuarioLogado) {
         userStatus.innerHTML = `Conectado: <strong>${usuarioLogado.nome}</strong>`;
@@ -60,6 +66,7 @@ function atualizarInterfaceUsuario() {
         document.getElementById('profileName').innerText = usuarioLogado.nome;
         document.getElementById('profileBio').innerText = usuarioLogado.bio || 'Sem biografia.';
         document.getElementById('myAvatarImg').src = usuarioLogado.foto || 'https://via.placeholder.com/150';
+        myStoryAvatar.src = usuarioLogado.foto || 'https://via.placeholder.com/150';
         document.getElementById('editBio').value = usuarioLogado.bio || '';
 
         const seguidores = usuarioLogado.seguidores || [];
@@ -70,6 +77,7 @@ function atualizarInterfaceUsuario() {
         userStatus.innerHTML = `<span>Visitante</span>`;
         authBox.style.display = 'block';
         profileBox.style.display = 'none';
+        myStoryAvatar.src = 'https://via.placeholder.com/150';
     }
 }
 
@@ -104,7 +112,6 @@ async function executarAutenticacao() {
     }
 }
 
-// Foto de Perfil
 function previsualizarFotoPerfil(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
@@ -167,7 +174,184 @@ async function salvarPerfil() {
     }
 }
 
-// --- MÍDIA NO POST (Foto ou Vídeo) ---
+// ================= LÓGICA DE STORIES =================
+
+function acionarUploadStory() {
+    if (!usuarioLogado) return alert("Faça login para postar um Story!");
+    document.getElementById('storyFileInput').click();
+}
+
+async function enviarStory(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    if (arquivo.size > 15 * 1024 * 1024) {
+        alert("O Story deve ter no máximo 15MB!");
+        event.target.value = '';
+        return;
+    }
+
+    const leitor = new FileReader();
+
+    if (arquivo.type.startsWith('image/')) {
+        leitor.onload = async function(e) {
+            const img = new Image();
+            img.onload = async function() {
+                const canvas = document.createElement('canvas');
+                const maxDim = 1080;
+                let w = img.width;
+                let h = img.height;
+
+                if (w > h && w > maxDim) {
+                    h *= maxDim / w;
+                    w = maxDim;
+                } else if (h > maxDim) {
+                    w *= maxDim / h;
+                    h = maxDim;
+                }
+
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+
+                const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                await postarStoryServidor(base64, 'imagem');
+            };
+            img.src = e.target.result;
+        };
+        leitor.readAsDataURL(arquivo);
+
+    } else if (arquivo.type.startsWith('video/')) {
+        leitor.onload = async function(e) {
+            await postarStoryServidor(e.target.result, 'video');
+        };
+        leitor.readAsDataURL(arquivo);
+    }
+
+    event.target.value = '';
+}
+
+async function postarStoryServidor(midiaUrl, midiaTipo) {
+    try {
+        const resposta = await fetch('/api/stories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                autorId: parseInt(usuarioLogado.id),
+                autorNome: usuarioLogado.nome,
+                midiaUrl,
+                midiaTipo
+            })
+        });
+
+        if (resposta.ok) {
+            alert("Story publicado com sucesso! Ele desaparecerá em 24h.");
+            carregarStories();
+        } else {
+            alert("Erro ao publicar Story.");
+        }
+    } catch {
+        alert("Erro na conexão ao enviar Story.");
+    }
+}
+
+async function carregarStories() {
+    try {
+        const resposta = await fetch('/api/stories');
+        storiesCarregados = await resposta.json();
+        const storiesList = document.getElementById('storiesList');
+        storiesList.innerHTML = '';
+
+        const bloqueados = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
+
+        // Agrupa o story mais recente de cada usuário (exceto bloqueados)
+        const usuariosVistos = new Set();
+        
+        storiesCarregados.forEach(story => {
+            if (bloqueados.includes(parseInt(story.autorId))) return;
+            if (usuariosVistos.has(story.autorId)) return;
+            usuariosVistos.add(story.autorId);
+
+            const storyElement = document.createElement('div');
+            storyElement.classList.add('story-item');
+            storyElement.onclick = () => abrirStoryModal(story);
+
+            storyElement.innerHTML = `
+                <div class="story-avatar-wrap">
+                    <img src="${story.autorFoto}" alt="${story.autorNome}">
+                </div>
+                <small>${story.autorNome}</small>
+            `;
+            storiesList.appendChild(storyElement);
+        });
+    } catch (err) {
+        console.error("Erro ao carregar stories:", err);
+    }
+}
+
+function abrirStoryModal(story) {
+    const modal = document.getElementById('storyModal');
+    const avatar = document.getElementById('modalStoryAvatar');
+    const author = document.getElementById('modalStoryAuthor');
+    const time = document.getElementById('modalStoryTime');
+    const content = document.getElementById('modalStoryContent');
+    const progressFill = document.getElementById('storyProgressFill');
+
+    avatar.src = story.autorFoto;
+    author.innerText = story.autorNome;
+
+    // Calcula há quantas horas foi postado
+    const horasAtras = Math.floor((Date.now() - parseInt(story.criadoEm)) / (1000 * 60 * 60));
+    time.innerText = `• ${horasAtras === 0 ? 'Agora' : horasAtras + 'h'}`;
+
+    if (story.midiaTipo === 'video') {
+        content.innerHTML = `<video id="activeStoryVideo" src="${story.midiaUrl}" autoplay playsinline></video>`;
+    } else {
+        content.innerHTML = `<img src="${story.midiaUrl}" alt="Story">`;
+    }
+
+    modal.style.display = 'flex';
+    iniciarTemporizadorStory(story.midiaTipo);
+}
+
+function iniciarTemporizadorStory(tipo) {
+    const progressFill = document.getElementById('storyProgressFill');
+    progressFill.style.width = '0%';
+
+    let duracaoSegundos = tipo === 'video' ? 10 : 5; // 5s para imagem ou tempo fixo para vídeo
+    let progresso = 0;
+    const intervalo = 50;
+    const incremento = 100 / ((duracaoSegundos * 1000) / intervalo);
+
+    if (timerStoryProgress) clearInterval(timerStoryProgress);
+
+    timerStoryProgress = setInterval(() => {
+        progresso += incremento;
+        progressFill.style.width = `${progresso}%`;
+
+        if (progresso >= 100) {
+            fecharStoryModalDirect();
+        }
+    }, intervalo);
+}
+
+function fecharStoryModalDirect() {
+    if (timerStoryProgress) clearInterval(timerStoryProgress);
+    const modal = document.getElementById('storyModal');
+    const content = document.getElementById('modalStoryContent');
+    content.innerHTML = '';
+    modal.style.display = 'none';
+}
+
+function fecharStoryModal(event) {
+    if (event.target.id === 'storyModal') {
+        fecharStoryModalDirect();
+    }
+}
+
+// ================= RESTANTE DO FEED =================
+
 function previsualizarMidiaPost(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
@@ -176,7 +360,6 @@ function previsualizarMidiaPost(event) {
     const previewContent = document.getElementById('mediaPreviewContent');
     previewContent.innerHTML = '';
 
-    // Limite de 15MB para vídeos/fotos
     if (arquivo.size > 15 * 1024 * 1024) {
         alert("O arquivo é muito grande! Escolha uma foto ou vídeo curto de até 15MB.");
         event.target.value = '';
@@ -186,12 +369,11 @@ function previsualizarMidiaPost(event) {
     const leitor = new FileReader();
 
     if (arquivo.type.startsWith('image/')) {
-        // Imagem: Comprime antes de guardar
         leitor.onload = function(e) {
             const img = new Image();
             img.onload = function() {
                 const canvas = document.createElement('canvas');
-                const maxDim = 1080; // Boa resolução para feed
+                const maxDim = 1080;
                 let w = img.width;
                 let h = img.height;
 
@@ -219,7 +401,6 @@ function previsualizarMidiaPost(event) {
         leitor.readAsDataURL(arquivo);
 
     } else if (arquivo.type.startsWith('video/')) {
-        // Vídeo: Lê em Base64 direto
         leitor.onload = function(e) {
             postMidiaTemp = { url: e.target.result, tipo: 'video' };
             previewContent.innerHTML = `<video src="${e.target.result}" controls autoplay muted></video>`;
@@ -243,13 +424,16 @@ function trocarAbaFeed(aba) {
 
     const feedTitle = document.getElementById('feedTitle');
     const boxCriarPost = document.getElementById('boxCriarPost');
+    const storiesBar = document.getElementById('storiesBar');
 
     if (aba === 'salvos') {
         feedTitle.innerText = "Meus Posts Salvos 🔖";
         boxCriarPost.style.display = 'none';
+        storiesBar.style.display = 'none';
     } else {
         feedTitle.innerText = "Feed Recente 🌐";
         boxCriarPost.style.display = 'block';
+        storiesBar.style.display = 'flex';
     }
 
     carregarPosts();
@@ -287,7 +471,6 @@ async function carregarPosts() {
             const ehMeuPost = usuarioLogado && parseInt(post.autorId) === parseInt(usuarioLogado.id);
             const jaSegue = seguindoDoUsuario.includes(parseInt(post.autorId));
 
-            // Renderiza Imagem ou Vídeo se o post tiver
             let midiaHTML = '';
             if (post.midiaUrl) {
                 if (post.midiaTipo === 'video') {
@@ -494,6 +677,7 @@ async function bloquearUsuario(alvoId, nomeAlvo) {
             usuarioLogado.bloqueados = dados.bloqueados;
             localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
             alert(`${nomeAlvo} foi bloqueado.`);
+            carregarStories();
             carregarPosts();
         }
     } catch {

@@ -43,7 +43,6 @@
                     <h3 id="profileName">Nome</h3>
                     <p id="profileBio" class="bio-text">Sem biografia.</p>
 
-                    <!-- Estatísticas Sociais -->
                     <div class="social-stats">
                         <div>
                             <strong id="statSeguidores">0</strong>
@@ -56,7 +55,6 @@
                     </div>
                 </div>
 
-                <!-- Abas Rápidas -->
                 <div class="profile-tabs">
                     <button id="tabFeedBtn" class="tab-btn active" onclick="trocarAbaFeed('todos')">🌐 Feed</button>
                     <button id="tabSalvosBtn" class="tab-btn" onclick="trocarAbaFeed('salvos')">🔖 Salvos</button>
@@ -76,21 +74,35 @@
             </div>
         </aside>
 
-        <!-- Coluna Principal: Feed -->
+        <!-- Coluna Principal: Feed & Stories -->
         <main class="feed-section">
+            
+            <!-- BARRA DE STORIES -->
+            <section class="card stories-bar" id="storiesBar">
+                <!-- Story do Usuário (Adicionar) -->
+                <div class="story-item" onclick="acionarUploadStory()">
+                    <div class="story-avatar-wrap add-story-wrap">
+                        <img id="myStoryAvatar" src="https://via.placeholder.com/150" alt="Seu Story">
+                        <span class="plus-badge">+</span>
+                    </div>
+                    <small>Seu Story</small>
+                </div>
+                <input type="file" id="storyFileInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="enviarStory(event)">
+
+                <!-- Lista dinâmica com os stories de outros usuários -->
+                <div id="storiesList" class="stories-list"></div>
+            </section>
             
             <!-- Caixa de Criar Post -->
             <div class="card create-post" id="boxCriarPost">
                 <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
                 
-                <!-- Pré-visualização da Mídia antes de postar -->
                 <div id="mediaPreviewContainer" class="media-preview-box" style="display: none;">
                     <div id="mediaPreviewContent"></div>
                     <button class="btn-remove-media" onclick="removerMidiaAnexada()" title="Remover mídia">✖ Cancelar anexo</button>
                 </div>
 
                 <div class="post-actions">
-                    <!-- Botão de Anexo (Foto ou Vídeo) -->
                     <label class="btn-attach" for="postMediaInput" title="Anexar foto ou vídeo">
                         🎬/📷 Anexar Mídia
                     </label>
@@ -108,6 +120,28 @@
 
         </main>
 
+    </div>
+
+    <!-- MODAL DE VISUALIZAÇÃO DE STORY (TELA CHEIA) -->
+    <div id="storyModal" class="story-modal" style="display: none;" onclick="fecharStoryModal(event)">
+        <div class="story-viewer-box" onclick="event.stopPropagation()">
+            <div class="story-progress-bar">
+                <div id="storyProgressFill" class="story-progress-fill"></div>
+            </div>
+
+            <div class="story-viewer-header">
+                <div class="story-viewer-user">
+                    <img id="modalStoryAvatar" src="" alt="Avatar">
+                    <strong id="modalStoryAuthor">Nome</strong>
+                    <small id="modalStoryTime">• 1h</small>
+                </div>
+                <button class="btn-close-story" onclick="fecharStoryModalDirect()">✖</button>
+            </div>
+
+            <div id="modalStoryContent" class="story-media-wrapper">
+                <!-- Imagem ou vídeo carregado dinamicamente -->
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>

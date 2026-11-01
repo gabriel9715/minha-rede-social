@@ -13,7 +13,6 @@ const pool = new Pool({
 });
 
 app.use(cors());
-// Limite aumentado para suportar vídeos curtos de até 25MB
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(express.static(__dirname));
@@ -47,7 +46,16 @@ async function iniciarBanco() {
                 criado_em TEXT NOT NULL
             );
 
-            -- Garante a adição de todas as colunas dinâmicas
+            -- Nova Tabela de Stories (com timestamp para expirar em 24h)
+            CREATE TABLE IF NOT EXISTS stories (
+                id BIGSERIAL PRIMARY KEY,
+                autor_id BIGINT REFERENCES usuarios(id),
+                autor_nome TEXT NOT NULL,
+                midia_url TEXT NOT NULL,
+                midia_tipo TEXT NOT NULL,
+                criado_em BIGINT NOT NULL
+            );
+
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salvos JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguindo JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguidores JSONB DEFAULT '[]'::jsonb;
@@ -56,7 +64,7 @@ async function iniciarBanco() {
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_url TEXT;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_tipo TEXT;
         `);
-        console.log("Banco sincronizado com suporte a Fotos e Vídeos!");
+        console.log("Banco sincronizado com Suporte a Stories de 24h!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
@@ -233,7 +241,7 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
     }
 });
 
-// 8. Listar Posts (Trazendo imagem/vídeo se houver)
+// 8. Listar Posts
 app.get('/api/posts', async (req, res) => {
     try {
         const query = `
@@ -252,11 +260,10 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-// 9. Criar Post (Com suporte a texto, foto ou vídeo)
+// 9. Criar Post
 app.post('/api/posts', async (req, res) => {
     const { autorId, autorNome, conteudo, midiaUrl, midiaTipo } = req.body;
     
-    // É obrigatório ter ou texto ou mídia
     if ((!conteudo || !conteudo.trim()) && !midiaUrl) {
         return res.status(400).json({ erro: "Escreva algo ou anexe uma foto/vídeo para postar!" });
     }
@@ -274,7 +281,6 @@ app.post('/api/posts', async (req, res) => {
         );
         res.status(201).json(resultado.rows[0]);
     } catch (err) {
-        console.error(err);
         res.status(500).json({ erro: "Erro ao salvar publicação." });
     }
 });
@@ -321,6 +327,49 @@ app.post('/api/posts/:id/comentar', async (req, res) => {
         res.status(201).json(novoComentario);
     } catch {
         res.status(500).json({ erro: "Erro ao comentar." });
+    }
+});
+
+// ================= ROTAS DE STORIES (24 HORAS) =================
+
+// 12. Publicar Story
+app.post('/api/stories', async (req, res) => {
+    const { autorId, autorNome, midiaUrl, midiaTipo } = req.body;
+    if (!midiaUrl || !autorId) return res.status(400).json({ erro: "Mídia obrigatória para o Story." });
+
+    const agora = Date.now();
+
+    try {
+        const resultado = await pool.query(
+            `INSERT INTO stories (autor_id, autor_nome, midia_url, midia_tipo, criado_em) 
+             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [autorId, autorNome, midiaUrl, midiaTipo, agora]
+        );
+        res.status(201).json(resultado.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ erro: "Erro ao publicar Story." });
+    }
+});
+
+// 13. Listar Stories (Apenas das últimas 24 horas = 86400000 ms)
+app.get('/api/stories', async (req, res) => {
+    const limite24h = Date.now() - (24 * 60 * 60 * 1000);
+
+    try {
+        const query = `
+            SELECT s.id, s.autor_id AS "autorId", s.autor_nome AS "autorNome", 
+                   s.midia_url AS "midiaUrl", s.midia_tipo AS "midiaTipo", s.criado_em AS "criadoEm",
+                   COALESCE(u.foto, 'https://via.placeholder.com/150') AS "autorFoto"
+            FROM stories s
+            LEFT JOIN usuarios u ON s.autor_id = u.id
+            WHERE s.criado_em >= $1
+            ORDER BY s.id DESC
+        `;
+        const resultado = await pool.query(query, [limite24h]);
+        res.json(resultado.rows);
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao carregar stories." });
     }
 });
 

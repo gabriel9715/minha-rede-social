@@ -8,7 +8,6 @@
     --primary-hover: #166fe5;
 }
 
-/* Cores quando ativado o Modo Escuro */
 body.dark-mode {
     --bg-page: #18191a;
     --bg-card: #242526;
@@ -94,7 +93,6 @@ body {
     border: 1px solid var(--border-color);
 }
 
-/* Formulários */
 input, textarea {
     width: 100%;
     padding: 10px;
@@ -134,15 +132,14 @@ button {
     font-weight: bold;
 }
 
-/* Painel de Perfil */
 .profile-preview {
     text-align: center;
     margin-bottom: 15px;
 }
 
 .avatar-large {
-    width: 80px;
-    height: 80px;
+    width: 85px;
+    height: 85px;
     border-radius: 50%;
     object-fit: cover;
     margin-bottom: 8px;
@@ -153,6 +150,7 @@ button {
     font-size: 0.9rem;
     color: var(--text-muted);
     margin-top: 4px;
+    word-break: break-word;
 }
 
 .divider {
@@ -161,11 +159,28 @@ button {
     margin: 15px 0;
 }
 
+.btn-upload-label {
+    display: block;
+    background-color: var(--primary);
+    color: white;
+    text-align: center;
+    padding: 9px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.btn-upload-label:hover {
+    background-color: var(--primary-hover);
+}
+
 .btn-save-profile {
     width: 100%;
     margin-top: 10px;
     padding: 8px;
-    background-color: var(--primary);
+    background-color: #42b72a;
     color: white;
     border: none;
     border-radius: 6px;
@@ -188,7 +203,6 @@ body.dark-mode .btn-logout {
     color: #e4e6eb;
 }
 
-/* Post Box */
 .create-post textarea {
     height: 80px;
     resize: none;
@@ -209,7 +223,6 @@ body.dark-mode .btn-logout {
     font-weight: bold;
 }
 
-/* Feed Posts */
 .post-header {
     display: flex;
     align-items: center;

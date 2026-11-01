@@ -12,7 +12,6 @@
     <header class="navbar">
         <div class="logo">RedeSocial<span>.dev</span></div>
         <div class="nav-controls">
-            <!-- Botão Modo Escuro -->
             <button class="btn-theme" onclick="alternarTema()" id="themeBtn">🌙 Modo Escuro</button>
             <div class="user-status" id="userStatus">
                 <span>Visitante</span>
@@ -40,14 +39,20 @@
             <!-- Painel do Meu Perfil (quando logado) -->
             <div class="card" id="profileBox" style="display: none;">
                 <div class="profile-preview">
-                    <img id="myAvatarImg" src="" alt="Avatar" class="avatar-large">
+                    <img id="myAvatarImg" src="https://via.placeholder.com/150/1877f2/ffffff?text=Perfil" alt="Avatar" class="avatar-large">
                     <h3 id="profileName">Nome</h3>
                     <p id="profileBio" class="bio-text">Sem biografia.</p>
                 </div>
                 <hr class="divider">
                 <h4>Editar Perfil</h4>
-                <input type="text" id="editFoto" placeholder="Link (URL) da foto de perfil">
-                <textarea id="editBio" placeholder="Escreva uma biografia..." maxlength="120"></textarea>
+                
+                <!-- Botão de Upload da Galeria / Arquivos -->
+                <label class="btn-upload-label" for="fileFoto">
+                    📷 Escolher Foto do Aparelho
+                </label>
+                <input type="file" id="fileFoto" accept="image/*" style="display: none;" onchange="previsualizarFoto(event)">
+
+                <textarea id="editBio" placeholder="Escreva sua biografia..." maxlength="120"></textarea>
                 <button class="btn-save-profile" onclick="salvarPerfil()">Salvar Perfil</button>
                 <button class="btn-logout" onclick="deslogar()">Sair da Conta</button>
             </div>

@@ -1,14 +1,14 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
+let fotoBase64Temp = null;
 
-// Carregar preferências e dados ao abrir
 window.onload = () => {
     carregarTema();
     atualizarInterfaceUsuario();
     carregarPosts();
 };
 
-// --- MODO ESCURO / CLARO ---
+// Alternar Modo Escuro / Claro
 function alternarTema() {
     document.body.classList.toggle('dark-mode');
     const isDark = document.body.classList.contains('dark-mode');
@@ -23,7 +23,7 @@ function carregarTema() {
     }
 }
 
-// --- AUTENTICAÇÃO E PERFIL ---
+// Alternar entre Login e Cadastro
 function alternarModoAuth() {
     modoCadastro = !modoCadastro;
     document.getElementById('authNome').style.display = modoCadastro ? 'block' : 'none';
@@ -42,7 +42,6 @@ function atualizarInterfaceUsuario() {
         authBox.style.display = 'none';
         profileBox.style.display = 'block';
 
-        // Preenche o card do perfil
         document.getElementById('profileName').innerText = usuarioLogado.nome;
         document.getElementById('profileBio').innerText = usuarioLogado.bio || 'Sem biografia.';
         document.getElementById('myAvatarImg').src = usuarioLogado.foto || 'https://via.placeholder.com/150';
@@ -85,15 +84,33 @@ async function executarAutenticacao() {
     }
 }
 
+// Lê a foto escolhida do Celular ou Computador
+function previsualizarFoto(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    if (arquivo.size > 5 * 1024 * 1024) {
+        alert("A foto é muito pesada! Escolha uma imagem de até 5MB.");
+        return;
+    }
+
+    const leitor = new FileReader();
+    leitor.onload = function(e) {
+        fotoBase64Temp = e.target.result;
+        document.getElementById('myAvatarImg').src = fotoBase64Temp;
+    };
+    leitor.readAsDataURL(arquivo);
+}
+
 async function salvarPerfil() {
-    const foto = document.getElementById('editFoto').value.trim();
     const bio = document.getElementById('editBio').value.trim();
+    const fotoFinal = fotoBase64Temp || usuarioLogado.foto;
 
     try {
         const resposta = await fetch(`/api/usuarios/${usuarioLogado.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ foto: foto || usuarioLogado.foto, bio })
+            body: JSON.stringify({ foto: fotoFinal, bio })
         });
         const dados = await resposta.json();
 
@@ -108,7 +125,6 @@ async function salvarPerfil() {
     }
 }
 
-// --- FEED E POSTS ---
 async function carregarPosts() {
     try {
         const resposta = await fetch('/api/posts');

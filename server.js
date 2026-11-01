@@ -9,7 +9,9 @@ const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'banco.json');
 
 app.use(cors());
-app.use(express.json());
+// Suporte a upload de fotos de até 10MB
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static(__dirname));
 
 if (!fs.existsSync(DB_FILE)) {
@@ -29,7 +31,7 @@ function salvarBanco(dados) {
     fs.writeFileSync(DB_FILE, JSON.stringify(dados, null, 2));
 }
 
-// 1. Cadastro
+// 1. Cadastrar
 app.post('/api/cadastrar', (req, res) => {
     const { nome, email, senha } = req.body;
     if (!nome || !email || !senha) return res.status(400).json({ erro: "Preencha todos os campos!" });
@@ -45,14 +47,14 @@ app.post('/api/cadastrar', (req, res) => {
         email,
         senha: bcrypt.hashSync(senha, 10),
         foto: "https://via.placeholder.com/150/1877f2/ffffff?text=Perfil",
-        bio: "Olá! Estou na rede social."
+        bio: "Olá! Sou novo por aqui."
     };
 
     db.usuarios.push(novoUsuario);
     salvarBanco(db);
 
     const { senha: _, ...usuarioSemSenha } = novoUsuario;
-    res.status(201).json({ mensagem: "Conta criada!", usuario: usuarioSemSenha });
+    res.status(201).json({ mensagem: "Conta criada com sucesso!", usuario: usuarioSemSenha });
 });
 
 // 2. Login
@@ -66,10 +68,10 @@ app.post('/api/login', (req, res) => {
     }
 
     const { senha: _, ...usuarioSemSenha } = usuario;
-    res.json({ mensagem: "Conectado!", usuario: usuarioSemSenha });
+    res.json({ mensagem: "Login realizado com sucesso!", usuario: usuarioSemSenha });
 });
 
-// 3. Atualizar Perfil (Foto e Bio)
+// 3. Atualizar Foto do Aparelho e Bio
 app.put('/api/usuarios/:id', (req, res) => {
     const id = parseInt(req.params.id);
     const { foto, bio } = req.body;
@@ -83,13 +85,12 @@ app.put('/api/usuarios/:id', (req, res) => {
     salvarBanco(db);
 
     const { senha: _, ...usuarioSemSenha } = usuario;
-    res.json({ mensagem: "Perfil atualizado!", usuario: usuarioSemSenha });
+    res.json({ mensagem: "Perfil atualizado com sucesso!", usuario: usuarioSemSenha });
 });
 
-// 4. Listar Posts
+// 4. Listar Posts (mostrando a foto atual de quem postou)
 app.get('/api/posts', (req, res) => {
     const db = lerBanco();
-    // Vincula a foto mais recente do autor em cada post
     const postsComFotos = db.posts.slice().reverse().map(post => {
         const autor = db.usuarios.find(u => u.id === post.autorId);
         return {
@@ -111,7 +112,7 @@ app.post('/api/posts', (req, res) => {
         autorId,
         autorNome,
         conteudo,
-        curtidas: [], // Guarda os IDs dos usuários que curtiram
+        curtidas: [],
         criadoEm: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -120,7 +121,7 @@ app.post('/api/posts', (req, res) => {
     res.status(201).json(novoPost);
 });
 
-// 6. Curtida Única (Curte se não curtiu, descurte se já curtiu)
+// 6. Curtida Única
 app.post('/api/posts/:id/curtir', (req, res) => {
     const postId = parseInt(req.params.id);
     const { usuarioId } = req.body;
@@ -132,9 +133,9 @@ app.post('/api/posts/:id/curtir', (req, res) => {
 
     const index = post.curtidas.indexOf(usuarioId);
     if (index === -1) {
-        post.curtidas.push(usuarioId); // Adiciona curtida
+        post.curtidas.push(usuarioId);
     } else {
-        post.curtidas.splice(index, 1); // Remove se já curtiu
+        post.curtidas.splice(index, 1);
     }
 
     salvarBanco(db);

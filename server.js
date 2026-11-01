@@ -1,15 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const db = new sqlite3.Database(path.join(__dirname, 'banco.db'), ...
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-// Serve o HTML, CSS e JS direto do seu computador
+// Serve o HTML, CSS e JS diretamente
 app.use(express.static(__dirname));
 
 // Cria e conecta ao arquivo de banco de dados
@@ -113,10 +113,9 @@ app.post('/api/posts/:id/curtir', (req, res) => {
     });
 });
 
-// Inicia o servidor na porta 3000
-app.listen(PORT, () => {
+// Inicia o servidor ouvindo em 0.0.0.0 (obrigatório para nuvem)
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n===========================================`);
-    console.log(`SERVIDOR NO AR!`);
-    console.log(`Acesse no navegador: http://localhost:${PORT}`);
+    console.log(`SERVIDOR NO AR NA PORTA ${PORT}!`);
     console.log(`===========================================\n`);
 });

@@ -1,60 +1,56 @@
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DB_FILE = path.join(__dirname, 'banco.json');
 
 app.use(cors());
 app.use(express.json());
-// Serve o HTML, CSS e JS diretamente
 app.use(express.static(__dirname));
 
-// Cria e conecta ao arquivo de banco de dados
-const db = new sqlite3.Database(path.join(__dirname, 'banco.db'), (err) => {
-    if (err) console.error("Erro ao abrir banco de dados:", err);
-    else console.log("Conectado ao banco de dados SQLite com sucesso!");
-});
+// Inicializa o arquivo de banco JSON caso não exista
+if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({ usuarios: [], posts: [] }, null, 2));
+}
 
-// Cria as tabelas de Usuários e Postagens
-db.serialize(() => {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            senha TEXT NOT NULL
-        )
-    `);
+function lerBanco() {
+    try {
+        const dados = fs.readFileSync(DB_FILE, 'utf8');
+        return JSON.parse(dados);
+    } catch {
+        return { usuarios: [], posts: [] };
+    }
+}
 
-    db.run(`
-        CREATE TABLE IF NOT EXISTS posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            autor TEXT NOT NULL,
-            conteudo TEXT NOT NULL,
-            curtidas INTEGER DEFAULT 0,
-            criadoEm TEXT NOT NULL
-        )
-    `);
-});
+function salvarBanco(dados) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(dados, null, 2));
+}
 
-// 1. Cadastrar Usuário com senha criptografada
+// 1. Cadastrar Usuário
 app.post('/api/cadastrar', (req, res) => {
     const { nome, email, senha } = req.body;
     if (!nome || !email || !senha) {
         return res.status(400).json({ erro: "Preencha todos os campos!" });
     }
 
+    const db = lerBanco();
+    const usuarioExistente = db.usuarios.find(u => u.email === email);
+    if (usuarioExistente) {
+        return res.status(400).json({ erro: "E-mail já cadastrado." });
+    }
+
     const senhaHash = bcrypt.hashSync(senha, 10);
-    const query = `INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)`;
-    
-    db.run(query, [nome, email, senhaHash], function(err) {
-        if (err) {
-            return res.status(400).json({ erro: "E-mail já cadastrado." });
-        }
-        res.status(201).json({ mensagem: "Conta criada com sucesso!", usuario: { id: this.lastID, nome, email } });
+    const novoUsuario = { id: Date.now(), nome, email, senha: senhaHash };
+    db.usuarios.push(novoUsuario);
+    salvarBanco(db);
+
+    res.status(201).json({
+        mensagem: "Conta criada com sucesso!",
+        usuario: { id: novoUsuario.id, nome, email }
     });
 });
 
@@ -65,55 +61,68 @@ app.post('/api/login', (req, res) => {
         return res.status(400).json({ erro: "Preencha todos os campos!" });
     }
 
-    const query = `SELECT * FROM usuarios WHERE email = ?`;
-    db.get(query, [email], (err, usuario) => {
-        if (err || !usuario) {
-            return res.status(400).json({ erro: "E-mail ou senha incorretos." });
-        }
+    const db = lerBanco();
+    const usuario = db.usuarios.find(u => u.email === email);
+    if (!usuario) {
+        return res.status(400).json({ erro: "E-mail ou senha incorretos." });
+    }
 
-        const senhaValida = bcrypt.compareSync(senha, usuario.senha);
-        if (!senhaValida) {
-            return res.status(400).json({ erro: "E-mail ou senha incorretos." });
-        }
+    const senhaValida = bcrypt.compareSync(senha, usuario.senha);
+    if (!senhaValida) {
+        return res.status(400).json({ erro: "E-mail ou senha incorretos." });
+    }
 
-        res.json({ mensagem: "Login realizado com sucesso!", usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email } });
+    res.json({
+        mensagem: "Login realizado com sucesso!",
+        usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email }
     });
 });
 
-// 3. Pegar todos os posts salvos
+// 3. Listar Posts
 app.get('/api/posts', (req, res) => {
-    db.all(`SELECT * FROM posts ORDER BY id DESC`, [], (err, posts) => {
-        if (err) return res.status(500).json({ erro: "Erro ao buscar posts." });
-        res.json(posts);
-    });
+    const db = lerBanco();
+    // Envia os posts do mais recente para o mais antigo
+    res.json(db.posts.slice().reverse());
 });
 
-// 4. Salvar um novo post no banco
+// 4. Salvar Post
 app.post('/api/posts', (req, res) => {
     const { autor, conteudo } = req.body;
     if (!autor || !conteudo) {
         return res.status(400).json({ erro: "Conteúdo e autor são obrigatórios." });
     }
 
-    const criadoEm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const query = `INSERT INTO posts (autor, conteudo, criadoEm) VALUES (?, ?, ?)`;
+    const db = lerBanco();
+    const novoPost = {
+        id: Date.now(),
+        autor,
+        conteudo,
+        curtidas: 0,
+        criadoEm: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
 
-    db.run(query, [autor, conteudo, criadoEm], function(err) {
-        if (err) return res.status(500).json({ erro: "Erro ao salvar post." });
-        res.status(201).json({ id: this.lastID, autor, conteudo, curtidas: 0, criadoEm });
-    });
+    db.posts.push(novoPost);
+    salvarBanco(db);
+
+    res.status(201).json(novoPost);
 });
 
-// 5. Curtir post no banco
+// 5. Curtir Post
 app.post('/api/posts/:id/curtir', (req, res) => {
-    const id = req.params.id;
-    db.run(`UPDATE posts SET curtidas = curtidas + 1 WHERE id = ?`, [id], function(err) {
-        if (err) return res.status(500).json({ erro: "Erro ao curtir post." });
-        res.json({ sucesso: true });
-    });
+    const id = parseInt(req.params.id);
+    const db = lerBanco();
+    const post = db.posts.find(p => p.id === id);
+
+    if (post) {
+        post.curtidas += 1;
+        salvarBanco(db);
+        return res.json({ sucesso: true });
+    }
+
+    res.status(404).json({ erro: "Post não encontrado." });
 });
 
-// Inicia o servidor ouvindo em 0.0.0.0 (obrigatório para nuvem)
+// Inicia o servidor ouvindo em 0.0.0.0
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n===========================================`);
     console.log(`SERVIDOR NO AR NA PORTA ${PORT}!`);

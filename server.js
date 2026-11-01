@@ -44,14 +44,13 @@ async function iniciarBanco() {
                 criado_em TEXT NOT NULL
             );
 
-            -- Garante a existência das novas colunas sociais
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salvos JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguindo JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguidores JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bloqueados JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS comentarios JSONB DEFAULT '[]'::jsonb;
         `);
-        console.log("Banco de dados sincronizado com Sistema de Seguidores e Bloqueios!");
+        console.log("Banco sincronizado e pronto!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
@@ -100,7 +99,22 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 3. Atualizar Perfil
+// 3. Obter Perfil Atualizado (Garante que novos seguidores apareçam na hora)
+app.get('/api/usuarios/:id/perfil', async (req, res) => {
+    const id = req.params.id;
+    try {
+        const resultado = await pool.query(
+            `SELECT id, nome, email, foto, bio, salvos, seguindo, seguidores, bloqueados FROM usuarios WHERE id = $1`,
+            [id]
+        );
+        if (resultado.rows.length === 0) return res.status(404).json({ erro: "Usuário não encontrado." });
+        res.json(resultado.rows[0]);
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao buscar perfil." });
+    }
+});
+
+// 4. Atualizar Perfil
 app.put('/api/usuarios/:id', async (req, res) => {
     const id = req.params.id;
     const { foto, bio } = req.body;
@@ -117,7 +131,7 @@ app.put('/api/usuarios/:id', async (req, res) => {
     }
 });
 
-// 4. Seguir / Deixar de Seguir Usuário
+// 5. Seguir / Deixar de Seguir
 app.post('/api/usuarios/:id/seguir', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId } = req.body;
@@ -140,7 +154,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
 
         if (index === -1) {
             meuSeguindo.push(alvoId);
-            alvoSeguidores.push(meuId);
+            if (!alvoSeguidores.includes(meuId)) alvoSeguidores.push(meuId);
             seguindoAgora = true;
         } else {
             meuSeguindo.splice(index, 1);
@@ -157,7 +171,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
     }
 });
 
-// 5. Bloquear / Desbloquear Usuário
+// 6. Bloquear Usuário
 app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId } = req.body;
@@ -176,7 +190,6 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
 
         if (index === -1) {
             bloqueados.push(alvoId);
-            // Ao bloquear, deixa de seguir automaticamente
             const segIndex = seguindo.indexOf(alvoId);
             if (segIndex !== -1) seguindo.splice(segIndex, 1);
             bloqueou = true;
@@ -191,7 +204,7 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     }
 });
 
-// 6. Salvar / Desalvar Post
+// 7. Salvar / Desalvar Post
 app.post('/api/posts/:id/salvar', async (req, res) => {
     const postId = parseInt(req.params.id);
     const { usuarioId } = req.body;
@@ -216,7 +229,7 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
     }
 });
 
-// 7. Listar Posts (com filtro de bloqueios)
+// 8. Listar Posts
 app.get('/api/posts', async (req, res) => {
     try {
         const query = `
@@ -234,7 +247,7 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-// 8. Criar Post
+// 9. Criar Post
 app.post('/api/posts', async (req, res) => {
     const { autorId, autorNome, conteudo } = req.body;
     if (!conteudo || !autorId) return res.status(400).json({ erro: "Conteúdo e autor são obrigatórios." });
@@ -254,7 +267,7 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-// 9. Curtir Post
+// 10. Curtir Post
 app.post('/api/posts/:id/curtir', async (req, res) => {
     const postId = req.params.id;
     const { usuarioId } = req.body;
@@ -279,7 +292,7 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
     }
 });
 
-// 10. Comentar Post
+// 11. Comentar Post
 app.post('/api/posts/:id/comentar', async (req, res) => {
     const postId = req.params.id;
     const { autorNome, texto } = req.body;

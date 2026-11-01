@@ -3,11 +3,27 @@ let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 let fotoComprimidaTemp = null;
 let abaAtual = 'todos';
 
-window.onload = () => {
+window.onload = async () => {
     carregarTema();
+    if (usuarioLogado) {
+        await sincronizarPerfilDoServidor(); // Puxa contagem real de seguidores direto do banco
+    }
     atualizarInterfaceUsuario();
     carregarPosts();
 };
+
+// Sincroniza dados do usuário logado direto do banco de dados na inicialização
+async function sincronizarPerfilDoServidor() {
+    try {
+        const resposta = await fetch(`/api/usuarios/${usuarioLogado.id}/perfil`);
+        if (resposta.ok) {
+            usuarioLogado = await resposta.json();
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+        }
+    } catch (e) {
+        console.warn("Não foi possível sincronizar perfil agora:", e);
+    }
+}
 
 function alternarTema() {
     document.body.classList.toggle('dark-mode');
@@ -46,7 +62,7 @@ function atualizarInterfaceUsuario() {
         document.getElementById('myAvatarImg').src = usuarioLogado.foto || 'https://via.placeholder.com/150';
         document.getElementById('editBio').value = usuarioLogado.bio || '';
 
-        // Contadores sociais
+        // Contadores sociais atualizados
         const seguidores = usuarioLogado.seguidores || [];
         const seguindo = usuarioLogado.seguindo || [];
         document.getElementById('statSeguidores').innerText = seguidores.length;
@@ -181,7 +197,6 @@ async function carregarPosts() {
         const bloqueadosDoUsuario = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
         const seguindoDoUsuario = (usuarioLogado && usuarioLogado.seguindo) ? usuarioLogado.seguindo : [];
 
-        // Filtra posts de usuários bloqueados
         posts = posts.filter(p => !bloqueadosDoUsuario.includes(parseInt(p.autorId)));
 
         if (abaAtual === 'salvos') {
@@ -311,7 +326,7 @@ async function bloquearUsuario(alvoId, nomeAlvo) {
             usuarioLogado.bloqueados = dados.bloqueados;
             localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
             alert(`${nomeAlvo} foi bloqueado.`);
-            carregarPosts(); // Recarrega o feed sem os posts dele
+            carregarPosts();
         }
     } catch {
         alert("Erro ao bloquear usuário.");

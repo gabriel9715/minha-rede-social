@@ -1,7 +1,7 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 let fotoComprimidaTemp = null;
-let abaAtual = 'todos'; // 'todos' ou 'salvos'
+let abaAtual = 'todos';
 
 window.onload = () => {
     carregarTema();
@@ -58,9 +58,9 @@ function deslogar() {
 }
 
 async function executarAutenticacao() {
-    const email = document.getElementById('authEmail').value;
-    const senha = document.getElementById('authSenha').value;
-    const nome = document.getElementById('authNome').value;
+    const email = document.getElementById('authEmail').value.trim();
+    const senha = document.getElementById('authSenha').value.trim();
+    const nome = document.getElementById('authNome').value.trim();
 
     const endpoint = modoCadastro ? '/api/cadastrar' : '/api/login';
     const payload = modoCadastro ? { nome, email, senha } : { email, senha };
@@ -145,7 +145,6 @@ async function salvarPerfil() {
     }
 }
 
-// Trocar entre Feed Geral e Posts Salvos
 function trocarAbaFeed(aba) {
     abaAtual = aba;
     document.getElementById('tabFeedBtn').classList.toggle('active', aba === 'todos');
@@ -174,7 +173,6 @@ async function carregarPosts() {
 
         const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
 
-        // Filtra caso esteja na aba de salvos
         if (abaAtual === 'salvos') {
             posts = posts.filter(p => salvosDoUsuario.includes(parseInt(p.id)));
         }
@@ -189,10 +187,9 @@ async function carregarPosts() {
         posts.forEach(post => {
             const curtidasArray = post.curtidas || [];
             const comentariosArray = post.comentarios || [];
-            const curtiu = usuarioLogado && curtidasArray.includes(usuarioLogado.id);
+            const curtiu = usuarioLogado && curtidasArray.includes(parseInt(usuarioLogado.id));
             const salvou = salvosDoUsuario.includes(parseInt(post.id));
 
-            // Gera o HTML dos comentários já existentes
             let comentariosHTML = '';
             comentariosArray.forEach(c => {
                 comentariosHTML += `
@@ -224,7 +221,6 @@ async function carregarPosts() {
                     </button>
                 </div>
 
-                <!-- Seção de Comentários -->
                 <div class="comments-section">
                     <div id="comments-list-${post.id}">
                         ${comentariosHTML}
@@ -255,18 +251,21 @@ async function criarPost() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                autorId: usuarioLogado.id,
+                autorId: parseInt(usuarioLogado.id),
                 autorNome: usuarioLogado.nome,
-                conteudo
+                conteudo: conteudo
             })
         });
 
         if (resposta.ok) {
             input.value = '';
             carregarPosts();
+        } else {
+            const erroData = await resposta.json();
+            alert(erroData.erro || "Não foi possível publicar.");
         }
     } catch {
-        alert("Erro ao publicar.");
+        alert("Erro na conexão com o servidor ao tentar publicar.");
     }
 }
 
@@ -277,7 +276,7 @@ async function curtirPost(id, botao) {
         const resposta = await fetch(`/api/posts/${id}/curtir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuarioId: usuarioLogado.id })
+            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
         });
         const dados = await resposta.json();
 
@@ -290,7 +289,6 @@ async function curtirPost(id, botao) {
     }
 }
 
-// Salvar / Remover dos Favoritos
 async function salvarPost(id, botao) {
     if (!usuarioLogado) return alert('Faça login para salvar publicações!');
 
@@ -298,7 +296,7 @@ async function salvarPost(id, botao) {
         const resposta = await fetch(`/api/posts/${id}/salvar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuarioId: usuarioLogado.id })
+            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
         });
         const dados = await resposta.json();
 
@@ -315,7 +313,6 @@ async function salvarPost(id, botao) {
     }
 }
 
-// Comentar no Post
 async function adicionarComentario(postId) {
     const input = document.getElementById(`comment-input-${postId}`);
     const texto = input.value.trim();

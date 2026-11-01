@@ -1,6 +1,7 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 let fotoComprimidaTemp = null;
+let abaAtual = 'todos'; // 'todos' ou 'salvos'
 
 window.onload = () => {
     carregarTema();
@@ -8,7 +9,6 @@ window.onload = () => {
     carregarPosts();
 };
 
-// Alternar Modo Escuro / Claro
 function alternarTema() {
     document.body.classList.toggle('dark-mode');
     const isDark = document.body.classList.contains('dark-mode');
@@ -23,7 +23,6 @@ function carregarTema() {
     }
 }
 
-// Alternar Login e Cadastro
 function alternarModoAuth() {
     modoCadastro = !modoCadastro;
     document.getElementById('authNome').style.display = modoCadastro ? 'block' : 'none';
@@ -84,7 +83,6 @@ async function executarAutenticacao() {
     }
 }
 
-// COMPRESSOR DE IMAGEM AUTOMÁTICO (Reduz qualquer foto para caber no banco e no navegador)
 function previsualizarFoto(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
@@ -93,7 +91,6 @@ function previsualizarFoto(event) {
     leitor.onload = function(e) {
         const img = new Image();
         img.onload = function() {
-            // Cria um canvas para redimensionar a foto para no máximo 300x300 pixels
             const canvas = document.createElement('canvas');
             const maxDimensao = 300;
             let largura = img.width;
@@ -116,10 +113,7 @@ function previsualizarFoto(event) {
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, largura, altura);
 
-            // Converte para JPEG com compressão leve (70% de qualidade)
             fotoComprimidaTemp = canvas.toDataURL('image/jpeg', 0.7);
-            
-            // Mostra na tela na mesma hora
             document.getElementById('myAvatarImg').src = fotoComprimidaTemp;
         };
         img.src = e.target.result;
@@ -127,10 +121,8 @@ function previsualizarFoto(event) {
     leitor.readAsDataURL(arquivo);
 }
 
-// Salva Perfil com a foto comprimida e grava com segurança
 async function salvarPerfil() {
     if (!usuarioLogado) return;
-
     const bio = document.getElementById('editBio').value.trim();
     const fotoFinal = fotoComprimidaTemp || usuarioLogado.foto;
 
@@ -143,33 +135,72 @@ async function salvarPerfil() {
         const dados = await resposta.json();
 
         if (resposta.ok) {
-            // Atualiza os dados salvos no navegador com a nova imagem leve
             usuarioLogado = dados.usuario;
-            try {
-                localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
-            } catch (e) {
-                console.warn("Aviso ao salvar localmente:", e);
-            }
-            alert('Perfil e foto salvos com sucesso!');
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            alert('Perfil atualizado com sucesso!');
             location.reload();
-        } else {
-            alert(dados.erro || "Erro ao salvar perfil no servidor.");
         }
-    } catch (err) {
-        alert("Erro ao enviar dados para o servidor.");
+    } catch {
+        alert("Erro ao salvar perfil.");
     }
+}
+
+// Trocar entre Feed Geral e Posts Salvos
+function trocarAbaFeed(aba) {
+    abaAtual = aba;
+    document.getElementById('tabFeedBtn').classList.toggle('active', aba === 'todos');
+    document.getElementById('tabSalvosBtn').classList.toggle('active', aba === 'salvos');
+
+    const feedTitle = document.getElementById('feedTitle');
+    const boxCriarPost = document.getElementById('boxCriarPost');
+
+    if (aba === 'salvos') {
+        feedTitle.innerText = "Meus Posts Salvos 🔖";
+        boxCriarPost.style.display = 'none';
+    } else {
+        feedTitle.innerText = "Feed Recente 🌐";
+        boxCriarPost.style.display = 'block';
+    }
+
+    carregarPosts();
 }
 
 async function carregarPosts() {
     try {
         const resposta = await fetch('/api/posts');
-        const posts = await resposta.json();
+        let posts = await resposta.json();
         const feed = document.getElementById('feed');
         feed.innerHTML = '';
 
+        const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
+
+        // Filtra caso esteja na aba de salvos
+        if (abaAtual === 'salvos') {
+            posts = posts.filter(p => salvosDoUsuario.includes(parseInt(p.id)));
+        }
+
+        if (posts.length === 0) {
+            feed.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
+                ${abaAtual === 'salvos' ? 'Você ainda não salvou nenhum post.' : 'Nenhum post publicado ainda.'}
+            </p>`;
+            return;
+        }
+
         posts.forEach(post => {
             const curtidasArray = post.curtidas || [];
+            const comentariosArray = post.comentarios || [];
             const curtiu = usuarioLogado && curtidasArray.includes(usuarioLogado.id);
+            const salvou = salvosDoUsuario.includes(parseInt(post.id));
+
+            // Gera o HTML dos comentários já existentes
+            let comentariosHTML = '';
+            comentariosArray.forEach(c => {
+                comentariosHTML += `
+                    <div class="comment-item">
+                        <strong>${c.autorNome}:</strong> <span>${c.texto}</span>
+                    </div>
+                `;
+            });
 
             const postElement = document.createElement('article');
             postElement.classList.add('card', 'post');
@@ -185,9 +216,25 @@ async function carregarPosts() {
                     ${post.conteudo}
                 </div>
                 <div class="post-footer">
-                    <button class="btn-like ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
+                    <button class="btn-action ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
                         ❤️ <span>${curtidasArray.length}</span> curtidas
                     </button>
+                    <button class="btn-action ${salvou ? 'saved' : ''}" onclick="salvarPost(${post.id}, this)">
+                        🔖 <span>${salvou ? 'Salvo' : 'Salvar'}</span>
+                    </button>
+                </div>
+
+                <!-- Seção de Comentários -->
+                <div class="comments-section">
+                    <div id="comments-list-${post.id}">
+                        ${comentariosHTML}
+                    </div>
+                    ${usuarioLogado ? `
+                        <div class="comment-input-box">
+                            <input type="text" id="comment-input-${post.id}" placeholder="Escreva um comentário...">
+                            <button onclick="adicionarComentario(${post.id})">Enviar</button>
+                        </div>
+                    ` : ''}
                 </div>
             `;
             feed.appendChild(postElement);
@@ -236,11 +283,62 @@ async function curtirPost(id, botao) {
 
         if (resposta.ok) {
             botao.querySelector('span').innerText = dados.totalCurtidas;
-            if (dados.curtiu) {
-                botao.classList.add('liked');
-            } else {
-                botao.classList.remove('liked');
-            }
+            botao.classList.toggle('liked', dados.curtiu);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// Salvar / Remover dos Favoritos
+async function salvarPost(id, botao) {
+    if (!usuarioLogado) return alert('Faça login para salvar publicações!');
+
+    try {
+        const resposta = await fetch(`/api/posts/${id}/salvar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuarioId: usuarioLogado.id })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.salvos = dados.salvos;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            botao.classList.toggle('saved', dados.salvou);
+            botao.querySelector('span').innerText = dados.salvou ? 'Salvo' : 'Salvar';
+
+            if (abaAtual === 'salvos') carregarPosts();
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// Comentar no Post
+async function adicionarComentario(postId) {
+    const input = document.getElementById(`comment-input-${postId}`);
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    try {
+        const resposta = await fetch(`/api/posts/${postId}/comentar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                autorNome: usuarioLogado.nome,
+                texto
+            })
+        });
+        const novoComentario = await resposta.json();
+
+        if (resposta.ok) {
+            input.value = '';
+            const lista = document.getElementById(`comments-list-${postId}`);
+            const item = document.createElement('div');
+            item.classList.add('comment-item');
+            item.innerHTML = `<strong>${novoComentario.autorNome}:</strong> <span>${novoComentario.texto}</span>`;
+            lista.appendChild(item);
         }
     } catch (err) {
         console.error(err);

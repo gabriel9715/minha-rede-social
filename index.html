@@ -43,10 +43,16 @@
                     <h3 id="profileName">Nome</h3>
                     <p id="profileBio" class="bio-text">Sem biografia.</p>
                 </div>
+
+                <!-- Abas Rápidas: Feed Geral vs Salvos -->
+                <div class="profile-tabs">
+                    <button id="tabFeedBtn" class="tab-btn active" onclick="trocarAbaFeed('todos')">🌐 Feed</button>
+                    <button id="tabSalvosBtn" class="tab-btn" onclick="trocarAbaFeed('salvos')">🔖 Salvos</button>
+                </div>
+
                 <hr class="divider">
                 <h4>Editar Perfil</h4>
                 
-                <!-- Botão de Upload da Galeria / Arquivos -->
                 <label class="btn-upload-label" for="fileFoto">
                     📷 Escolher Foto do Aparelho
                 </label>
@@ -61,13 +67,16 @@
         <!-- Coluna Principal: Feed -->
         <main class="feed-section">
             
-            <!-- Criar Post -->
-            <div class="card create-post">
+            <!-- Criar Post (Só visível na aba 'todos') -->
+            <div class="card create-post" id="boxCriarPost">
                 <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
                 <div class="post-actions">
                     <button class="btn-primary" onclick="criarPost()">Publicar</button>
                 </div>
             </div>
+
+            <!-- Título da visualização atual -->
+            <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente</h3>
 
             <!-- Feed de Publicações -->
             <section id="feed" class="feed">

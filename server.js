@@ -77,6 +77,15 @@ async function iniciarBanco() {
                 criado_em BIGINT NOT NULL
             );
 
+            -- Tabela para Registro de Atividades do Usuário
+            CREATE TABLE IF NOT EXISTS atividades (
+                id BIGSERIAL PRIMARY KEY,
+                usuario_id BIGINT REFERENCES usuarios(id),
+                tipo TEXT NOT NULL,
+                descricao TEXT NOT NULL,
+                criado_em BIGINT NOT NULL
+            );
+
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salvos JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguindo JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguidores JSONB DEFAULT '[]'::jsonb;
@@ -87,7 +96,7 @@ async function iniciarBanco() {
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_url TEXT;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_tipo TEXT;
         `);
-        console.log("Banco sincronizado com Suporte a Código de Recuperação de Senha!");
+        console.log("Banco sincronizado com Suporte a Registro de Atividades!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
@@ -110,6 +119,17 @@ async function criarNotificacao(destinatarioId, autorId, autorNome, tipo, detalh
     }
 }
 
+async function registrarAtividade(usuarioId, tipo, descricao) {
+    try {
+        await pool.query(
+            `INSERT INTO atividades (usuario_id, tipo, descricao, criado_em) VALUES ($1, $2, $3, $4)`,
+            [usuarioId, tipo, descricao, Date.now()]
+        );
+    } catch (err) {
+        console.error("Erro atividade:", err);
+    }
+}
+
 // 1. Cadastrar
 app.post('/api/cadastrar', async (req, res) => {
     const { nome, email, senha } = req.body;
@@ -127,6 +147,7 @@ app.post('/api/cadastrar', async (req, res) => {
             [nome, email, senhaHash, fotoPadrao, bioPadrao]
         );
 
+        await registrarAtividade(resultado.rows[0].id, 'conta', 'Criou a conta na rede social');
         res.status(201).json({ mensagem: "Conta criada com sucesso!", usuario: resultado.rows[0] });
     } catch (err) {
         if (err.code === '23505') return res.status(400).json({ erro: "Este e-mail já está cadastrado." });
@@ -152,22 +173,14 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// ================= RECUPERAÇÃO / TROCA DE SENHA COM CÓDIGO =================
-
-// 3. Solicitar Código de 6 Dígitos
+// 3. Recuperação de Senha
 app.post('/api/recuperar/solicitar', async (req, res) => {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ erro: "Informe o e-mail." });
-
     try {
-        const userRes = await pool.query(`SELECT id, nome FROM usuarios WHERE email = $1`, [email.trim()]);
-        if (userRes.rows.length === 0) {
-            return res.status(404).json({ erro: "Nenhuma conta encontrada com este e-mail." });
-        }
+        const userRes = await pool.query(`SELECT id FROM usuarios WHERE email = $1`, [email.trim()]);
+        if (userRes.rows.length === 0) return res.status(404).json({ erro: "E-mail não encontrado." });
 
-        // Gera código numérico de 6 dígitos (ex: 839201)
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-        // Válido por 15 minutos (900.000 ms)
         const expiraEm = Date.now() + (15 * 60 * 1000);
 
         await pool.query(
@@ -175,68 +188,47 @@ app.post('/api/recuperar/solicitar', async (req, res) => {
             [codigo, expiraEm, email.trim()]
         );
 
-        console.log(`\n========================================`);
-        console.log(`[CÓDIGO DE RECUPERAÇÃO ENVIADO]`);
-        console.log(`Para: ${email}`);
-        console.log(`CÓDIGO DE 6 DÍGITOS: ${codigo}`);
-        console.log(`========================================\n`);
-
-        // Retorna o código na resposta para facilitar os testes imediatos sem SMTP
         res.json({
             sucesso: true,
             mensagem: `Código gerado e enviado para ${email}!`,
             codigoSimulado: codigo 
         });
     } catch (err) {
-        res.status(500).json({ erro: "Erro ao gerar código de segurança." });
+        res.status(500).json({ erro: "Erro ao gerar código." });
     }
 });
 
-// 4. Confirmar Código e Redefinir Senha
 app.post('/api/recuperar/confirmar', async (req, res) => {
     const { email, codigo, novaSenha } = req.body;
-    if (!email || !codigo || !novaSenha) {
-        return res.status(400).json({ erro: "Preencha todos os campos!" });
-    }
-
     try {
         const userRes = await pool.query(
             `SELECT id, codigo_recuperacao, codigo_expira FROM usuarios WHERE email = $1`,
             [email.trim()]
         );
-
-        if (userRes.rows.length === 0) {
-            return res.status(404).json({ erro: "Usuário não encontrado." });
-        }
+        if (userRes.rows.length === 0) return res.status(404).json({ erro: "Usuário não encontrado." });
 
         const usuario = userRes.rows[0];
-
-        // Valida se o código confere
         if (!usuario.codigo_recuperacao || usuario.codigo_recuperacao !== codigo.trim()) {
-            return res.status(400).json({ erro: "Código de verificação incorreto!" });
+            return res.status(400).json({ erro: "Código incorreto!" });
         }
-
-        // Valida se não expirou
         if (Date.now() > parseInt(usuario.codigo_expira)) {
-            return res.status(400).json({ erro: "Este código expirou. Solicite um novo." });
+            return res.status(400).json({ erro: "Código expirado." });
         }
 
-        // Criptografa a nova senha com bcrypt
         const novaSenhaHash = bcrypt.hashSync(novaSenha, 10);
-
-        // Limpa o código para não ser reutilizado
         await pool.query(
             `UPDATE usuarios SET senha = $1, codigo_recuperacao = NULL, codigo_expira = NULL WHERE email = $2`,
             [novaSenhaHash, email.trim()]
         );
 
-        res.json({ mensagem: "Senha redefinida com sucesso! Você já pode entrar com sua nova senha." });
+        await registrarAtividade(usuario.id, 'segurança', 'Redefiniu a senha de acesso');
+        res.json({ mensagem: "Senha redefinida com sucesso!" });
     } catch (err) {
         res.status(500).json({ erro: "Erro ao redefinir senha." });
     }
 });
 
-// 5. Obter Perfil
+// 4. Obter Perfil
 app.get('/api/usuarios/:id/perfil', async (req, res) => {
     const id = req.params.id;
     try {
@@ -251,7 +243,7 @@ app.get('/api/usuarios/:id/perfil', async (req, res) => {
     }
 });
 
-// 6. Atualizar Perfil
+// 5. Atualizar Perfil
 app.put('/api/usuarios/:id', async (req, res) => {
     const id = req.params.id;
     const { foto, bio } = req.body;
@@ -262,9 +254,29 @@ app.put('/api/usuarios/:id', async (req, res) => {
              WHERE id = $3 RETURNING id, nome, email, foto, bio, salvos, seguindo, seguidores, bloqueados`,
             [foto, bio, id]
         );
+        await registrarAtividade(id, 'perfil', 'Atualizou a foto ou biografia do perfil');
         res.json({ mensagem: "Perfil atualizado!", usuario: resultado.rows[0] });
     } catch (err) {
         res.status(500).json({ erro: "Erro ao atualizar perfil." });
+    }
+});
+
+// 6. Listar Usuários Bloqueados Detalhado
+app.get('/api/usuarios/:id/bloqueados-detalhes', async (req, res) => {
+    const id = req.params.id;
+    try {
+        const userRes = await pool.query(`SELECT bloqueados FROM usuarios WHERE id = $1`, [id]);
+        const bloqueados = userRes.rows[0]?.bloqueados || [];
+
+        if (bloqueados.length === 0) return res.json([]);
+
+        const resultado = await pool.query(
+            `SELECT id, nome, foto FROM usuarios WHERE id = ANY($1::bigint[])`,
+            [bloqueados]
+        );
+        res.json(resultado.rows);
+    } catch {
+        res.status(500).json({ erro: "Erro ao carregar bloqueados." });
     }
 });
 
@@ -277,7 +289,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
 
     try {
         const meuRes = await pool.query(`SELECT seguindo FROM usuarios WHERE id = $1`, [meuId]);
-        const alvoRes = await pool.query(`SELECT seguidores FROM usuarios WHERE id = $1`, [alvoId]);
+        const alvoRes = await pool.query(`SELECT seguidores, nome FROM usuarios WHERE id = $1`, [alvoId]);
 
         let meuSeguindo = meuRes.rows[0].seguindo || [];
         let alvoSeguidores = alvoRes.rows[0].seguidores || [];
@@ -290,6 +302,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
             if (!alvoSeguidores.includes(meuId)) alvoSeguidores.push(meuId);
             seguindoAgora = true;
             await criarNotificacao(alvoId, meuId, meuNome, 'seguiu', 'começou a seguir você');
+            await registrarAtividade(meuId, 'social', `Começou a seguir ${alvoRes.rows[0]?.nome || 'um usuário'}`);
         } else {
             meuSeguindo.splice(index, 1);
             const alvoIndex = alvoSeguidores.indexOf(meuId);
@@ -305,10 +318,12 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
     }
 });
 
-// 8. Bloquear Usuário
+// 8. Bloquear / Desbloquear Usuário
 app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId } = req.body;
+
+    if (alvoId === meuId) return res.status(400).json({ erro: "Você não pode se bloquear." });
 
     try {
         const meuRes = await pool.query(`SELECT bloqueados, seguindo FROM usuarios WHERE id = $1`, [meuId]);
@@ -323,8 +338,10 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
             const segIndex = seguindo.indexOf(alvoId);
             if (segIndex !== -1) seguindo.splice(segIndex, 1);
             bloqueou = true;
+            await registrarAtividade(meuId, 'privacidade', `Bloqueou um usuário`);
         } else {
             bloqueados.splice(index, 1);
+            await registrarAtividade(meuId, 'privacidade', `Desbloqueou um usuário`);
         }
 
         await pool.query(`UPDATE usuarios SET bloqueados = $1, seguindo = $2 WHERE id = $3`, [JSON.stringify(bloqueados), JSON.stringify(seguindo), meuId]);
@@ -352,6 +369,7 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
             if (postRes.rows.length > 0) {
                 await criarNotificacao(postRes.rows[0].autor_id, usuarioId, usuarioNome, 'salvou', 'salvou a sua publicação');
             }
+            await registrarAtividade(usuarioId, 'salvou', `Salvou uma publicação nos favoritos`);
         } else {
             salvos.splice(index, 1);
         }
@@ -398,6 +416,8 @@ app.post('/api/posts', async (req, res) => {
                        midia_url AS "midiaUrl", midia_tipo AS "midiaTipo", curtidas, comentarios, criado_em AS "criadoEm"`,
             [autorId, autorNome, conteudo || "", midiaUrl || null, midiaTipo || null, criadoEm]
         );
+
+        await registrarAtividade(autorId, 'publicou', `Publicou um novo post no feed`);
         res.status(201).json(resultado.rows[0]);
     } catch (err) {
         res.status(500).json({ erro: "Erro ao salvar publicação." });
@@ -421,6 +441,7 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
             curtidas.push(usuarioId);
             curtiu = true;
             await criarNotificacao(postResult.rows[0].autor_id, usuarioId, usuarioNome, 'curtida', 'curtiu sua publicação');
+            await registrarAtividade(usuarioId, 'curtiu', `Curtiu uma publicação no feed`);
         } else {
             curtidas.splice(index, 1);
         }
@@ -447,6 +468,8 @@ app.post('/api/posts/:id/comentar', async (req, res) => {
         await pool.query(`UPDATE posts SET comentarios = $1 WHERE id = $2`, [JSON.stringify(comentarios), postId]);
 
         await criarNotificacao(postResult.rows[0].autor_id, autorId, autorNome, 'comentario', `comentou: "${texto.slice(0, 30)}..."`);
+        await registrarAtividade(autorId, 'comentou', `Comentou em uma publicação`);
+
         res.status(201).json(novoComentario);
     } catch {
         res.status(500).json({ erro: "Erro ao comentar." });
@@ -462,6 +485,7 @@ app.post('/api/stories', async (req, res) => {
              VALUES ($1, $2, $3, $4, $5) RETURNING *`,
             [autorId, autorNome, midiaUrl, midiaTipo, Date.now()]
         );
+        await registrarAtividade(autorId, 'story', `Publicou um Story de 24h`);
         res.status(201).json(resultado.rows[0]);
     } catch {
         res.status(500).json({ erro: "Erro ao publicar Story." });
@@ -570,6 +594,24 @@ app.delete('/api/notificacoes/:usuarioId', async (req, res) => {
         res.json({ sucesso: true });
     } catch {
         res.status(500).json({ erro: "Erro ao limpar notificações." });
+    }
+});
+
+// 17. Registro de Atividades do Usuário
+app.get('/api/atividades/:usuarioId', async (req, res) => {
+    const usuarioId = parseInt(req.params.usuarioId);
+    try {
+        const query = `
+            SELECT id, tipo, descricao, criado_em AS "criadoEm"
+            FROM atividades
+            WHERE usuario_id = $1
+            ORDER BY criado_em DESC
+            LIMIT 60
+        `;
+        const resultado = await pool.query(query, [usuarioId]);
+        res.json(resultado.rows);
+    } catch {
+        res.status(500).json({ erro: "Erro ao buscar histórico de atividades." });
     }
 });
 

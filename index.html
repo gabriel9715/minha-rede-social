@@ -8,11 +8,11 @@
 </head>
 <body>
 
-    <!-- Barra Superior -->
+    <!-- Barra Superior de Navegação -->
     <header class="navbar">
         <div class="logo">RedeSocial<span>.dev</span></div>
         
-        <!-- Menu Central de Navegação por Abas -->
+        <!-- Abas Principais (aparecem quando logado) -->
         <nav class="nav-tabs" id="mainNavTabs" style="display: none;">
             <button class="nav-tab-btn active" id="btnTabFeed" onclick="mudarAbaPrincipal('feed')" title="Feed Principal">
                 🌐 Feed
@@ -27,6 +27,12 @@
             <button class="nav-tab-btn" id="btnTabSalvos" onclick="mudarAbaPrincipal('salvos')" title="Posts Salvos">
                 🔖 Salvos
             </button>
+            <button class="nav-tab-btn" id="btnTabPerfil" onclick="mudarAbaPrincipal('perfil')" title="Meu Perfil">
+                👤 Perfil
+            </button>
+            <button class="nav-tab-btn" id="btnTabConfig" onclick="mudarAbaPrincipal('config')" title="Configurações e Privacidade">
+                ⚙️ Configurações
+            </button>
         </nav>
 
         <div class="nav-controls">
@@ -37,14 +43,12 @@
         </div>
     </header>
 
-    <div class="container">
+    <div class="container" id="mainContainer">
         
-        <!-- Coluna Esquerda: Login / Meu Perfil -->
-        <aside class="auth-section">
-            
-            <!-- Painel de Login/Cadastro/Recuperação -->
+        <!-- Coluna de Login/Cadastro (só visível para visitantes) -->
+        <aside class="auth-section" id="asideAuth">
             <div class="card" id="authBox">
-                <!-- Modo Login / Cadastro -->
+                <!-- Login / Cadastro -->
                 <div id="authFormNormal">
                     <h3 id="authTitle">Entrar na Conta</h3>
                     <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
@@ -62,11 +66,11 @@
                     </p>
                 </div>
 
-                <!-- Modo Recuperação de Senha -->
+                <!-- Recuperação de Senha -->
                 <div id="authFormRecuperar" style="display: none;">
                     <h3>Recuperar Senha 🔑</h3>
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 5px;">
-                        Solicite o código de 6 dígitos para redefinir sua senha com segurança.
+                        Solicite o código de 6 dígitos para redefinir sua senha.
                     </p>
 
                     <div id="passo1Codigo">
@@ -89,49 +93,14 @@
                     </p>
                 </div>
             </div>
-
-            <!-- Painel do Meu Perfil -->
-            <div class="card" id="profileBox" style="display: none;">
-                <div class="profile-preview">
-                    <img id="myAvatarImg" src="https://via.placeholder.com/150/1877f2/ffffff?text=Perfil" alt="Avatar" class="avatar-large">
-                    <h3 id="profileName">Nome</h3>
-                    <p id="profileBio" class="bio-text">Sem biografia.</p>
-
-                    <div class="social-stats">
-                        <div>
-                            <strong id="statSeguidores">0</strong>
-                            <small>Seguidores</small>
-                        </div>
-                        <div>
-                            <strong id="statSeguindo">0</strong>
-                            <small>Seguindo</small>
-                        </div>
-                    </div>
-                </div>
-
-                <hr class="divider">
-                <h4>Editar Perfil</h4>
-                
-                <label class="btn-upload-label" for="fileFoto">
-                    📷 Trocar Foto de Perfil
-                </label>
-                <input type="file" id="fileFoto" accept="image/*" style="display: none;" onchange="previsualizarFotoPerfil(event)">
-
-                <textarea id="editBio" placeholder="Escreva sua biografia..." maxlength="120"></textarea>
-                <button class="btn-save-profile" onclick="salvarPerfil()">Salvar Perfil</button>
-
-                <!-- Botão de Segurança: Trocar Senha Logado -->
-                <button class="btn-security" onclick="iniciarTrocaSenhaLogado()">🔒 Redefinir Senha</button>
-
-                <button class="btn-logout" onclick="deslogar()">Sair da Conta</button>
-            </div>
         </aside>
 
-        <!-- Coluna Principal: Conteúdo Dinâmico das Abas -->
-        <main class="feed-section">
+        <!-- Área Principal de Conteúdo -->
+        <main class="feed-section" id="mainContentArea">
             
-            <!-- ABA 1: FEED -->
+            <!-- ================= ABA 1: FEED ================= -->
             <div id="viewFeed">
+                <!-- Stories -->
                 <section class="card stories-bar" id="storiesBar">
                     <div class="story-item" onclick="acionarUploadStory()">
                         <div class="story-avatar-wrap add-story-wrap">
@@ -144,6 +113,7 @@
                     <div id="storiesList" class="stories-list"></div>
                 </section>
                 
+                <!-- Criar Post -->
                 <div class="card create-post" id="boxCriarPost">
                     <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
                     
@@ -162,11 +132,10 @@
                 </div>
 
                 <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente 🌐</h3>
-
                 <section id="feed" class="feed"></section>
             </div>
 
-            <!-- ABA 2: MENSAGENS / DIRECT -->
+            <!-- ================= ABA 2: MENSAGENS ================= -->
             <div id="viewMensagens" style="display: none;">
                 <div class="card direct-chat-card">
                     <div class="direct-chat-sidebar">
@@ -191,7 +160,7 @@
                 </div>
             </div>
 
-            <!-- ABA 3: NOTIFICAÇÕES -->
+            <!-- ================= ABA 3: NOTIFICAÇÕES ================= -->
             <div id="viewNotificacoes" style="display: none;">
                 <div class="card">
                     <div class="notif-header">
@@ -202,10 +171,81 @@
                 </div>
             </div>
 
-            <!-- ABA 4: SALVOS -->
+            <!-- ================= ABA 4: SALVOS ================= -->
             <div id="viewSalvos" style="display: none;">
                 <h3 style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Publicações Salvas 🔖</h3>
                 <section id="feedSalvos" class="feed"></section>
+            </div>
+
+            <!-- ================= ABA 5: PERFIL DEDICADO ================= -->
+            <div id="viewPerfil" style="display: none;">
+                <div class="card profile-page-card">
+                    <div class="profile-header-large">
+                        <img id="myLargeAvatar" src="https://via.placeholder.com/150" alt="Avatar" class="avatar-extra-large">
+                        <div class="profile-header-details">
+                            <h2 id="profileLargeName">Nome do Usuário</h2>
+                            <p id="profileLargeBio" class="bio-text">Sem biografia ainda.</p>
+                            
+                            <div class="social-stats profile-stats-inline">
+                                <div><strong id="statPerfilSeguidores">0</strong> <small>Seguidores</small></div>
+                                <div><strong id="statPerfilSeguindo">0</strong> <small>Seguindo</small></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="divider">
+                    <h3>Editar Minhas Informações</h3>
+
+                    <label class="btn-upload-label" for="fileFoto">
+                        📷 Escolher Nova Foto do Aparelho
+                    </label>
+                    <input type="file" id="fileFoto" accept="image/*" style="display: none;" onchange="previsualizarFotoPerfil(event)">
+
+                    <textarea id="editBio" placeholder="Escreva sua biografia..." maxlength="120" style="margin-top: 12px;"></textarea>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 12px;">
+                        <button class="btn-save-profile" style="flex: 2;" onclick="salvarPerfil()">Salvar Perfil</button>
+                        <button class="btn-logout" style="flex: 1;" onclick="deslogar()">Sair da Conta</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= ABA 6: CONFIGURAÇÕES E PRIVACIDADE ================= -->
+            <div id="viewConfig" style="display: none;">
+                <!-- Seção 1: Registro de Atividades -->
+                <div class="card">
+                    <div class="config-section-header">
+                        <h3>📜 Registro de Atividades</h3>
+                        <small style="color: var(--text-muted);">Veja tudo o que você fez na rede social</small>
+                    </div>
+                    <div id="activityLogList" class="activity-log-list" style="margin-top: 15px;">
+                        <p style="color: var(--text-muted);">Carregando suas atividades...</p>
+                    </div>
+                </div>
+
+                <!-- Seção 2: Segurança & Troca de Senha -->
+                <div class="card">
+                    <div class="config-section-header">
+                        <h3>🔒 Segurança da Conta</h3>
+                        <small style="color: var(--text-muted);">Altere sua senha com código de verificação</small>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <button class="btn-security" onclick="iniciarTrocaSenhaLogado()">
+                            Redefinir Minha Senha (Código de 6 Dígitos)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Seção 3: Privacidade & Contas Bloqueadas -->
+                <div class="card">
+                    <div class="config-section-header">
+                        <h3>🚫 Usuários Bloqueados</h3>
+                        <small style="color: var(--text-muted);">Gerencie quem não pode interagir com você</small>
+                    </div>
+                    <div id="blockedUsersList" class="blocked-users-list" style="margin-top: 15px;">
+                        <p style="color: var(--text-muted);">Nenhum usuário bloqueado.</p>
+                    </div>
+                </div>
             </div>
 
         </main>

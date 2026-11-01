@@ -1,6 +1,6 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
-let fotoBase64Temp = null;
+let fotoComprimidaTemp = null;
 
 window.onload = () => {
     carregarTema();
@@ -23,7 +23,7 @@ function carregarTema() {
     }
 }
 
-// Alternar entre Login e Cadastro
+// Alternar Login e Cadastro
 function alternarModoAuth() {
     modoCadastro = !modoCadastro;
     document.getElementById('authNome').style.display = modoCadastro ? 'block' : 'none';
@@ -84,27 +84,55 @@ async function executarAutenticacao() {
     }
 }
 
-// Lê a foto escolhida do Celular ou Computador
+// COMPRESSOR DE IMAGEM AUTOMÁTICO (Reduz qualquer foto para caber no banco e no navegador)
 function previsualizarFoto(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
 
-    if (arquivo.size > 5 * 1024 * 1024) {
-        alert("A foto é muito pesada! Escolha uma imagem de até 5MB.");
-        return;
-    }
-
     const leitor = new FileReader();
     leitor.onload = function(e) {
-        fotoBase64Temp = e.target.result;
-        document.getElementById('myAvatarImg').src = fotoBase64Temp;
+        const img = new Image();
+        img.onload = function() {
+            // Cria um canvas para redimensionar a foto para no máximo 300x300 pixels
+            const canvas = document.createElement('canvas');
+            const maxDimensao = 300;
+            let largura = img.width;
+            let altura = img.height;
+
+            if (largura > altura) {
+                if (largura > maxDimensao) {
+                    altura *= maxDimensao / largura;
+                    largura = maxDimensao;
+                }
+            } else {
+                if (altura > maxDimensao) {
+                    largura *= maxDimensao / altura;
+                    altura = maxDimensao;
+                }
+            }
+
+            canvas.width = largura;
+            canvas.height = altura;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, largura, altura);
+
+            // Converte para JPEG com compressão leve (70% de qualidade)
+            fotoComprimidaTemp = canvas.toDataURL('image/jpeg', 0.7);
+            
+            // Mostra na tela na mesma hora
+            document.getElementById('myAvatarImg').src = fotoComprimidaTemp;
+        };
+        img.src = e.target.result;
     };
     leitor.readAsDataURL(arquivo);
 }
 
+// Salva Perfil com a foto comprimida e grava com segurança
 async function salvarPerfil() {
+    if (!usuarioLogado) return;
+
     const bio = document.getElementById('editBio').value.trim();
-    const fotoFinal = fotoBase64Temp || usuarioLogado.foto;
+    const fotoFinal = fotoComprimidaTemp || usuarioLogado.foto;
 
     try {
         const resposta = await fetch(`/api/usuarios/${usuarioLogado.id}`, {
@@ -115,13 +143,20 @@ async function salvarPerfil() {
         const dados = await resposta.json();
 
         if (resposta.ok) {
+            // Atualiza os dados salvos no navegador com a nova imagem leve
             usuarioLogado = dados.usuario;
-            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
-            alert('Perfil atualizado com sucesso!');
+            try {
+                localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            } catch (e) {
+                console.warn("Aviso ao salvar localmente:", e);
+            }
+            alert('Perfil e foto salvos com sucesso!');
             location.reload();
+        } else {
+            alert(dados.erro || "Erro ao salvar perfil no servidor.");
         }
-    } catch {
-        alert("Erro ao salvar perfil.");
+    } catch (err) {
+        alert("Erro ao enviar dados para o servidor.");
     }
 }
 

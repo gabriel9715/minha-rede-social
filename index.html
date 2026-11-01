@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minha Rede Social</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Barra de Navegação Superior -->
+    <header class="navbar">
+        <div class="logo">RedeSocial<span>.dev</span></div>
+        <div class="user-status" id="userStatus">
+            <span>Visitante</span>
+        </div>
+    </header>
+
+    <div class="container">
+        
+        <!-- Coluna Esquerda: Login / Cadastro -->
+        <aside class="auth-section">
+            <div class="card" id="authBox">
+                <h3 id="authTitle">Entrar na Conta</h3>
+                
+                <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
+                <input type="email" id="authEmail" placeholder="Seu e-mail">
+                <input type="password" id="authSenha" placeholder="Sua senha">
+                
+                <button id="authBtn" onclick="executarAutenticacao()">Entrar</button>
+                
+                <p class="toggle-link">
+                    <span id="toggleText">Não tem conta?</span>
+                    <a href="javascript:void(0)" onclick="alternarModoAuth()">Cadastre-se</a>
+                </p>
+            </div>
+        </aside>
+
+        <!-- Coluna Principal: Feed de Notícias -->
+        <main class="feed-section">
+            
+            <!-- Caixa para Criar Nova Publicação -->
+            <div class="card create-post">
+                <textarea id="postContent" placeholder="O que você está pensando hoje?"></textarea>
+                <div class="post-actions">
+                    <button class="btn-primary" onclick="criarPostSimulado()">Publicar</button>
+                </div>
+            </div>
+
+            <!-- Lista de Publicações -->
+            <section id="feed" class="feed">
+                <!-- Posts de exemplo para testar a interface -->
+                <article class="card post">
+                    <div class="post-header">
+                        <div class="avatar">JS</div>
+                        <div>
+                            <strong>João Silva</strong>
+                            <small>• 10:45</small>
+                        </div>
+                    </div>
+                    <div class="post-body">
+                        Sejam todos bem-vindos à minha nova rede social! Em breve o servidor e o banco de dados estarão funcionando.
+                    </div>
+                    <div class="post-footer">
+                        <button class="btn-like" onclick="curtir(this)">❤️ <span>0</span> curtidas</button>
+                    </div>
+                </article>
+            </section>
+
+        </main>
+
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

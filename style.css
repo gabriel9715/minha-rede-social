@@ -1,0 +1,193 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+    background-color: #f0f2f5;
+    color: #1c1e21;
+}
+
+/* Barra superior */
+.navbar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #dddfe2;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.logo {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #1877f2;
+}
+
+.logo span {
+    color: #333;
+}
+
+/* Layout em Grid / Flex */
+.container {
+    max-width: 950px;
+    margin: 25px auto;
+    padding: 0 15px;
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.auth-section {
+    flex: 1;
+    min-width: 280px;
+}
+
+.feed-section {
+    flex: 2;
+    min-width: 320px;
+}
+
+/* Estilo padrão de Card */
+.card {
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    margin-bottom: 16px;
+}
+
+/* Formulário de Login/Cadastro */
+.auth-section input {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    border: 1px solid #ccd0d5;
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+
+.auth-section button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 12px;
+    background-color: #42b72a;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.auth-section button:hover {
+    background-color: #36a420;
+}
+
+.toggle-link {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.toggle-link a {
+    color: #1877f2;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+/* Caixa de Criar Post */
+.create-post textarea {
+    width: 100%;
+    height: 80px;
+    border: 1px solid #ccd0d5;
+    border-radius: 6px;
+    padding: 10px;
+    resize: none;
+    font-size: 1rem;
+    outline: none;
+}
+
+.post-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.btn-primary {
+    background-color: #1877f2;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.btn-primary:hover {
+    background-color: #166fe5;
+}
+
+/* Cards do Feed */
+.post-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background-color: #1877f2;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.post-header small {
+    color: #65676b;
+}
+
+.post-body {
+    line-height: 1.4;
+    margin-bottom: 12px;
+    word-break: break-word;
+}
+
+.post-footer {
+    border-top: 1px solid #e4e6eb;
+    padding-top: 8px;
+}
+
+.btn-like {
+    background: none;
+    border: none;
+    color: #65676b;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.btn-like:hover {
+    color: #e41e3f;
+}
+
+/* Responsividade para Celulares */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+    .auth-section, .feed-section {
+        width: 100%;
+    }
+}

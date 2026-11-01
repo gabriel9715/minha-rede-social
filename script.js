@@ -1,18 +1,18 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
-let fotoComprimidaTemp = null;
+let fotoPerfilComprimidaTemp = null;
+let postMidiaTemp = null; // { url: base64, tipo: 'imagem' | 'video' }
 let abaAtual = 'todos';
 
 window.onload = async () => {
     carregarTema();
     if (usuarioLogado) {
-        await sincronizarPerfilDoServidor(); // Puxa contagem real de seguidores direto do banco
+        await sincronizarPerfilDoServidor();
     }
     atualizarInterfaceUsuario();
     carregarPosts();
 };
 
-// Sincroniza dados do usuário logado direto do banco de dados na inicialização
 async function sincronizarPerfilDoServidor() {
     try {
         const resposta = await fetch(`/api/usuarios/${usuarioLogado.id}/perfil`);
@@ -62,7 +62,6 @@ function atualizarInterfaceUsuario() {
         document.getElementById('myAvatarImg').src = usuarioLogado.foto || 'https://via.placeholder.com/150';
         document.getElementById('editBio').value = usuarioLogado.bio || '';
 
-        // Contadores sociais atualizados
         const seguidores = usuarioLogado.seguidores || [];
         const seguindo = usuarioLogado.seguindo || [];
         document.getElementById('statSeguidores').innerText = seguidores.length;
@@ -105,7 +104,8 @@ async function executarAutenticacao() {
     }
 }
 
-function previsualizarFoto(event) {
+// Foto de Perfil
+function previsualizarFotoPerfil(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
 
@@ -135,8 +135,8 @@ function previsualizarFoto(event) {
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, largura, altura);
 
-            fotoComprimidaTemp = canvas.toDataURL('image/jpeg', 0.7);
-            document.getElementById('myAvatarImg').src = fotoComprimidaTemp;
+            fotoPerfilComprimidaTemp = canvas.toDataURL('image/jpeg', 0.7);
+            document.getElementById('myAvatarImg').src = fotoPerfilComprimidaTemp;
         };
         img.src = e.target.result;
     };
@@ -146,7 +146,7 @@ function previsualizarFoto(event) {
 async function salvarPerfil() {
     if (!usuarioLogado) return;
     const bio = document.getElementById('editBio').value.trim();
-    const fotoFinal = fotoComprimidaTemp || usuarioLogado.foto;
+    const fotoFinal = fotoPerfilComprimidaTemp || usuarioLogado.foto;
 
     try {
         const resposta = await fetch(`/api/usuarios/${usuarioLogado.id}`, {
@@ -165,6 +165,75 @@ async function salvarPerfil() {
     } catch {
         alert("Erro ao salvar perfil.");
     }
+}
+
+// --- MÍDIA NO POST (Foto ou Vídeo) ---
+function previsualizarMidiaPost(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    const previewContainer = document.getElementById('mediaPreviewContainer');
+    const previewContent = document.getElementById('mediaPreviewContent');
+    previewContent.innerHTML = '';
+
+    // Limite de 15MB para vídeos/fotos
+    if (arquivo.size > 15 * 1024 * 1024) {
+        alert("O arquivo é muito grande! Escolha uma foto ou vídeo curto de até 15MB.");
+        event.target.value = '';
+        return;
+    }
+
+    const leitor = new FileReader();
+
+    if (arquivo.type.startsWith('image/')) {
+        // Imagem: Comprime antes de guardar
+        leitor.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const maxDim = 1080; // Boa resolução para feed
+                let w = img.width;
+                let h = img.height;
+
+                if (w > h && w > maxDim) {
+                    h *= maxDim / w;
+                    w = maxDim;
+                } else if (h > maxDim) {
+                    w *= maxDim / h;
+                    h = maxDim;
+                }
+
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+
+                const base64Comprimido = canvas.toDataURL('image/jpeg', 0.8);
+                postMidiaTemp = { url: base64Comprimido, tipo: 'imagem' };
+
+                previewContent.innerHTML = `<img src="${base64Comprimido}" alt="Pré-visualização">`;
+                previewContainer.style.display = 'flex';
+            };
+            img.src = e.target.result;
+        };
+        leitor.readAsDataURL(arquivo);
+
+    } else if (arquivo.type.startsWith('video/')) {
+        // Vídeo: Lê em Base64 direto
+        leitor.onload = function(e) {
+            postMidiaTemp = { url: e.target.result, tipo: 'video' };
+            previewContent.innerHTML = `<video src="${e.target.result}" controls autoplay muted></video>`;
+            previewContainer.style.display = 'flex';
+        };
+        leitor.readAsDataURL(arquivo);
+    }
+}
+
+function removerMidiaAnexada() {
+    postMidiaTemp = null;
+    document.getElementById('postMediaInput').value = '';
+    document.getElementById('mediaPreviewContent').innerHTML = '';
+    document.getElementById('mediaPreviewContainer').style.display = 'none';
 }
 
 function trocarAbaFeed(aba) {
@@ -218,6 +287,24 @@ async function carregarPosts() {
             const ehMeuPost = usuarioLogado && parseInt(post.autorId) === parseInt(usuarioLogado.id);
             const jaSegue = seguindoDoUsuario.includes(parseInt(post.autorId));
 
+            // Renderiza Imagem ou Vídeo se o post tiver
+            let midiaHTML = '';
+            if (post.midiaUrl) {
+                if (post.midiaTipo === 'video') {
+                    midiaHTML = `
+                        <div class="post-media-container">
+                            <video src="${post.midiaUrl}" controls playsinline preload="metadata"></video>
+                        </div>
+                    `;
+                } else {
+                    midiaHTML = `
+                        <div class="post-media-container">
+                            <img src="${post.midiaUrl}" alt="Mídia do Post" loading="lazy">
+                        </div>
+                    `;
+                }
+            }
+
             let comentariosHTML = '';
             comentariosArray.forEach(c => {
                 comentariosHTML += `
@@ -251,9 +338,9 @@ async function carregarPosts() {
                     ` : ''}
                 </div>
 
-                <div class="post-body">
-                    ${post.conteudo}
-                </div>
+                ${post.conteudo ? `<div class="post-body">${post.conteudo}</div>` : ''}
+                
+                ${midiaHTML}
 
                 <div class="post-footer">
                     <button class="btn-action ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
@@ -278,6 +365,87 @@ async function carregarPosts() {
             `;
             feed.appendChild(postElement);
         });
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function criarPost() {
+    if (!usuarioLogado) return alert('Faça login para poder postar!');
+    const input = document.getElementById('postContent');
+    const conteudo = input.value.trim();
+
+    if (!conteudo && !postMidiaTemp) {
+        return alert('Escreva uma mensagem ou anexe uma foto/vídeo!');
+    }
+
+    const payload = {
+        autorId: parseInt(usuarioLogado.id),
+        autorNome: usuarioLogado.nome,
+        conteudo: conteudo,
+        midiaUrl: postMidiaTemp ? postMidiaTemp.url : null,
+        midiaTipo: postMidiaTemp ? postMidiaTemp.tipo : null
+    };
+
+    try {
+        const resposta = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (resposta.ok) {
+            input.value = '';
+            removerMidiaAnexada();
+            carregarPosts();
+        } else {
+            const erroData = await resposta.json();
+            alert(erroData.erro || "Não foi possível publicar.");
+        }
+    } catch {
+        alert("Erro na conexão ao enviar a publicação.");
+    }
+}
+
+async function curtirPost(id, botao) {
+    if (!usuarioLogado) return alert('Faça login para curtir!');
+
+    try {
+        const resposta = await fetch(`/api/posts/${id}/curtir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            botao.querySelector('span').innerText = dados.totalCurtidas;
+            botao.classList.toggle('liked', dados.curtiu);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function salvarPost(id, botao) {
+    if (!usuarioLogado) return alert('Faça login para salvar publicações!');
+
+    try {
+        const resposta = await fetch(`/api/posts/${id}/salvar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado.salvos = dados.salvos;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            botao.classList.toggle('saved', dados.salvou);
+            botao.querySelector('span').innerText = dados.salvou ? 'Salvo' : 'Salvar';
+
+            if (abaAtual === 'salvos') carregarPosts();
+        }
     } catch (err) {
         console.error(err);
     }
@@ -330,79 +498,6 @@ async function bloquearUsuario(alvoId, nomeAlvo) {
         }
     } catch {
         alert("Erro ao bloquear usuário.");
-    }
-}
-
-async function criarPost() {
-    if (!usuarioLogado) return alert('Faça login para poder postar!');
-    const input = document.getElementById('postContent');
-    const conteudo = input.value.trim();
-    if (!conteudo) return alert('Digite algo para publicar!');
-
-    try {
-        const resposta = await fetch('/api/posts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                autorId: parseInt(usuarioLogado.id),
-                autorNome: usuarioLogado.nome,
-                conteudo: conteudo
-            })
-        });
-
-        if (resposta.ok) {
-            input.value = '';
-            carregarPosts();
-        } else {
-            const erroData = await resposta.json();
-            alert(erroData.erro || "Não foi possível publicar.");
-        }
-    } catch {
-        alert("Erro na conexão com o servidor ao tentar publicar.");
-    }
-}
-
-async function curtirPost(id, botao) {
-    if (!usuarioLogado) return alert('Faça login para curtir!');
-
-    try {
-        const resposta = await fetch(`/api/posts/${id}/curtir`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
-        });
-        const dados = await resposta.json();
-
-        if (resposta.ok) {
-            botao.querySelector('span').innerText = dados.totalCurtidas;
-            botao.classList.toggle('liked', dados.curtiu);
-        }
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-async function salvarPost(id, botao) {
-    if (!usuarioLogado) return alert('Faça login para salvar publicações!');
-
-    try {
-        const resposta = await fetch(`/api/posts/${id}/salvar`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
-        });
-        const dados = await resposta.json();
-
-        if (resposta.ok) {
-            usuarioLogado.salvos = dados.salvos;
-            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
-            botao.classList.toggle('saved', dados.salvou);
-            botao.querySelector('span').innerText = dados.salvou ? 'Salvo' : 'Salvar';
-
-            if (abaAtual === 'salvos') carregarPosts();
-        }
-    } catch (err) {
-        console.error(err);
     }
 }
 

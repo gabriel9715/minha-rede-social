@@ -13,8 +13,9 @@ const pool = new Pool({
 });
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// Limite aumentado para suportar vídeos curtos de até 25MB
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(express.static(__dirname));
 
 async function iniciarBanco() {
@@ -39,18 +40,23 @@ async function iniciarBanco() {
                 autor_id BIGINT REFERENCES usuarios(id),
                 autor_nome TEXT NOT NULL,
                 conteudo TEXT NOT NULL,
+                midia_url TEXT,
+                midia_tipo TEXT,
                 curtidas JSONB DEFAULT '[]'::jsonb,
                 comentarios JSONB DEFAULT '[]'::jsonb,
                 criado_em TEXT NOT NULL
             );
 
+            -- Garante a adição de todas as colunas dinâmicas
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS salvos JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguindo JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguidores JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bloqueados JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS comentarios JSONB DEFAULT '[]'::jsonb;
+            ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_url TEXT;
+            ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_tipo TEXT;
         `);
-        console.log("Banco sincronizado e pronto!");
+        console.log("Banco sincronizado com suporte a Fotos e Vídeos!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
@@ -99,7 +105,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 3. Obter Perfil Atualizado (Garante que novos seguidores apareçam na hora)
+// 3. Obter Perfil
 app.get('/api/usuarios/:id/perfil', async (req, res) => {
     const id = req.params.id;
     try {
@@ -167,7 +173,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
 
         res.json({ seguindoAgora, seguindo: meuSeguindo });
     } catch (err) {
-        res.status(500).json({ erro: "Erro ao atualizar relação de seguidores." });
+        res.status(500).json({ erro: "Erro ao atualizar seguidores." });
     }
 });
 
@@ -180,8 +186,6 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
 
     try {
         const meuRes = await pool.query(`SELECT bloqueados, seguindo FROM usuarios WHERE id = $1`, [meuId]);
-        if (meuRes.rows.length === 0) return res.status(404).json({ erro: "Usuário não encontrado." });
-
         let bloqueados = meuRes.rows[0].bloqueados || [];
         let seguindo = meuRes.rows[0].seguindo || [];
 
@@ -200,7 +204,7 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
         await pool.query(`UPDATE usuarios SET bloqueados = $1, seguindo = $2 WHERE id = $3`, [JSON.stringify(bloqueados), JSON.stringify(seguindo), meuId]);
         res.json({ bloqueou, bloqueados });
     } catch (err) {
-        res.status(500).json({ erro: "Erro ao bloquear usuário." });
+        res.status(500).json({ erro: "Erro ao bloquear." });
     }
 });
 
@@ -229,12 +233,13 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
     }
 });
 
-// 8. Listar Posts
+// 8. Listar Posts (Trazendo imagem/vídeo se houver)
 app.get('/api/posts', async (req, res) => {
     try {
         const query = `
             SELECT p.id, p.autor_id AS "autorId", p.autor_nome AS "autorNome", 
-                   p.conteudo, p.curtidas, p.comentarios, p.criado_em AS "criadoEm",
+                   p.conteudo, p.midia_url AS "midiaUrl", p.midia_tipo AS "midiaTipo",
+                   p.curtidas, p.comentarios, p.criado_em AS "criadoEm",
                    COALESCE(u.foto, 'https://via.placeholder.com/150') AS "autorFoto"
             FROM posts p
             LEFT JOIN usuarios u ON p.autor_id = u.id
@@ -247,22 +252,29 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-// 9. Criar Post
+// 9. Criar Post (Com suporte a texto, foto ou vídeo)
 app.post('/api/posts', async (req, res) => {
-    const { autorId, autorNome, conteudo } = req.body;
-    if (!conteudo || !autorId) return res.status(400).json({ erro: "Conteúdo e autor são obrigatórios." });
+    const { autorId, autorNome, conteudo, midiaUrl, midiaTipo } = req.body;
+    
+    // É obrigatório ter ou texto ou mídia
+    if ((!conteudo || !conteudo.trim()) && !midiaUrl) {
+        return res.status(400).json({ erro: "Escreva algo ou anexe uma foto/vídeo para postar!" });
+    }
+    if (!autorId) return res.status(400).json({ erro: "Autor não identificado." });
 
     const criadoEm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     try {
         const resultado = await pool.query(
-            `INSERT INTO posts (autor_id, autor_nome, conteudo, curtidas, comentarios, criado_em) 
-             VALUES ($1, $2, $3, '[]'::jsonb, '[]'::jsonb, $4) 
-             RETURNING id, autor_id AS "autorId", autor_nome AS "autorNome", conteudo, curtidas, comentarios, criado_em AS "criadoEm"`,
-            [autorId, autorNome, conteudo, criadoEm]
+            `INSERT INTO posts (autor_id, autor_nome, conteudo, midia_url, midia_tipo, curtidas, comentarios, criado_em) 
+             VALUES ($1, $2, $3, $4, $5, '[]'::jsonb, '[]'::jsonb, $6) 
+             RETURNING id, autor_id AS "autorId", autor_nome AS "autorNome", conteudo, 
+                       midia_url AS "midiaUrl", midia_tipo AS "midiaTipo", curtidas, comentarios, criado_em AS "criadoEm"`,
+            [autorId, autorNome, conteudo || "", midiaUrl || null, midiaTipo || null, criadoEm]
         );
         res.status(201).json(resultado.rows[0]);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ erro: "Erro ao salvar publicação." });
     }
 });
@@ -288,7 +300,7 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
         await pool.query(`UPDATE posts SET curtidas = $1 WHERE id = $2`, [JSON.stringify(curtidas), postId]);
         res.json({ totalCurtidas: curtidas.length, curtiu });
     } catch {
-        res.status(500).json({ erro: "Erro ao processar curtida." });
+        res.status(500).json({ erro: "Erro ao curtir post." });
     }
 });
 

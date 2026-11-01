@@ -66,9 +66,9 @@
                 <h4>Editar Perfil</h4>
                 
                 <label class="btn-upload-label" for="fileFoto">
-                    📷 Escolher Foto do Aparelho
+                    📷 Trocar Foto de Perfil
                 </label>
-                <input type="file" id="fileFoto" accept="image/*" style="display: none;" onchange="previsualizarFoto(event)">
+                <input type="file" id="fileFoto" accept="image/*" style="display: none;" onchange="previsualizarFotoPerfil(event)">
 
                 <textarea id="editBio" placeholder="Escreva sua biografia..." maxlength="120"></textarea>
                 <button class="btn-save-profile" onclick="salvarPerfil()">Salvar Perfil</button>
@@ -79,9 +79,23 @@
         <!-- Coluna Principal: Feed -->
         <main class="feed-section">
             
+            <!-- Caixa de Criar Post -->
             <div class="card create-post" id="boxCriarPost">
                 <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
+                
+                <!-- Pré-visualização da Mídia antes de postar -->
+                <div id="mediaPreviewContainer" class="media-preview-box" style="display: none;">
+                    <div id="mediaPreviewContent"></div>
+                    <button class="btn-remove-media" onclick="removerMidiaAnexada()" title="Remover mídia">✖ Cancelar anexo</button>
+                </div>
+
                 <div class="post-actions">
+                    <!-- Botão de Anexo (Foto ou Vídeo) -->
+                    <label class="btn-attach" for="postMediaInput" title="Anexar foto ou vídeo">
+                        🎬/📷 Anexar Mídia
+                    </label>
+                    <input type="file" id="postMediaInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="previsualizarMidiaPost(event)">
+
                     <button class="btn-primary" onclick="criarPost()">Publicar</button>
                 </div>
             </div>

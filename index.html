@@ -2,18 +2,19 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minha Rede Social</title>
+    <!-- Viewport otimizada para celulares e PCs com proporção perfeita -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>XXtap</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- Barra Superior de Navegação -->
+    <!-- Barra Superior de Navegação (Desktop & Mobile) -->
     <header class="navbar">
-        <div class="logo">RedeSocial<span>.dev</span></div>
+        <div class="logo">XX<span>tap</span></div>
         
-        <!-- Abas Principais (aparecem quando logado) -->
-        <nav class="nav-tabs" id="mainNavTabs" style="display: none;">
+        <!-- Menu Central de Abas no Desktop (Escondido no Celular para virar Bottom Nav) -->
+        <nav class="nav-tabs desktop-only" id="mainNavTabs">
             <button class="nav-tab-btn active" id="btnTabFeed" onclick="mudarAbaPrincipal('feed')" title="Feed Principal">
                 🌐 Feed
             </button>
@@ -31,12 +32,12 @@
                 👤 Perfil
             </button>
             <button class="nav-tab-btn" id="btnTabConfig" onclick="mudarAbaPrincipal('config')" title="Configurações e Privacidade">
-                ⚙️ Configurações
+                ⚙️ Config
             </button>
         </nav>
 
         <div class="nav-controls">
-            <button class="btn-theme" onclick="alternarTema()" id="themeBtn">🌙 Modo Escuro</button>
+            <button class="btn-theme" onclick="alternarTema()" id="themeBtn" title="Alternar tema">🌙</button>
             <div class="user-status" id="userStatus">
                 <span>Visitante</span>
             </div>
@@ -50,7 +51,7 @@
             <div class="card" id="authBox">
                 <!-- Login / Cadastro -->
                 <div id="authFormNormal">
-                    <h3 id="authTitle">Entrar na Conta</h3>
+                    <h3 id="authTitle">Entrar no XXtap</h3>
                     <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
                     <input type="email" id="authEmail" placeholder="Seu e-mail">
                     <input type="password" id="authSenha" placeholder="Sua senha">
@@ -115,16 +116,16 @@
                 
                 <!-- Criar Post -->
                 <div class="card create-post" id="boxCriarPost">
-                    <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
+                    <textarea id="postContent" placeholder="O que você quer compartilhar no XXtap hoje?"></textarea>
                     
                     <div id="mediaPreviewContainer" class="media-preview-box" style="display: none;">
                         <div id="mediaPreviewContent"></div>
-                        <button class="btn-remove-media" onclick="removerMidiaAnexada()" title="Remover mídia">✖ Cancelar anexo</button>
+                        <button class="btn-remove-media" onclick="removerMidiaAnexada()" title="Remover mídia">✖ Cancelar</button>
                     </div>
 
                     <div class="post-actions">
                         <label class="btn-attach" for="postMediaInput" title="Anexar foto ou vídeo">
-                            🎬/📷 Anexar Mídia
+                            🎬/📷 Anexar
                         </label>
                         <input type="file" id="postMediaInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="previsualizarMidiaPost(event)">
                         <button class="btn-primary" onclick="criarPost()">Publicar</button>
@@ -144,15 +145,16 @@
                     </div>
                     <div class="direct-chat-main">
                         <div id="directChatEmpty" class="direct-empty-state">
-                            <p>Selecione uma conversa à esquerda para começar.</p>
+                            <p>Selecione uma conversa para começar.</p>
                         </div>
                         <div id="directChatActive" style="display: none; height: 100%; flex-direction: column;">
                             <div class="direct-chat-header">
+                                <button class="btn-back-direct-mobile mobile-only" onclick="voltarParaContatosMobile()">⬅</button>
                                 <strong id="directActiveUserName">Nome</strong>
                             </div>
                             <div id="directMessagesBody" class="direct-messages-body"></div>
                             <div class="direct-input-bar">
-                                <input type="text" id="directMsgInput" placeholder="Digite uma mensagem..." onkeydown="checarEnterDirect(event)">
+                                <input type="text" id="directMsgInput" placeholder="Mensagem..." onkeydown="checarEnterDirect(event)">
                                 <button onclick="enviarMensagemDirect()">Enviar</button>
                             </div>
                         </div>
@@ -194,36 +196,34 @@
                     </div>
 
                     <hr class="divider">
-                    <h3>Editar Minhas Informações</h3>
+                    <h3>Editar Perfil</h3>
 
                     <label class="btn-upload-label" for="fileFoto">
-                        📷 Escolher Nova Foto do Aparelho
+                        📷 Escolher Nova Foto
                     </label>
                     <input type="file" id="fileFoto" accept="image/*" style="display: none;" onchange="previsualizarFotoPerfil(event)">
 
                     <textarea id="editBio" placeholder="Escreva sua biografia..." maxlength="120" style="margin-top: 12px;"></textarea>
                     
-                    <div style="display: flex; gap: 10px; margin-top: 12px;">
-                        <button class="btn-save-profile" style="flex: 2;" onclick="salvarPerfil()">Salvar Perfil</button>
-                        <button class="btn-logout" style="flex: 1;" onclick="deslogar()">Sair da Conta</button>
+                    <div class="profile-actions-row">
+                        <button class="btn-save-profile" onclick="salvarPerfil()">Salvar Perfil</button>
+                        <button class="btn-logout" onclick="deslogar()">Sair da Conta</button>
                     </div>
                 </div>
             </div>
 
             <!-- ================= ABA 6: CONFIGURAÇÕES E PRIVACIDADE ================= -->
             <div id="viewConfig" style="display: none;">
-                <!-- Seção 1: Registro de Atividades -->
                 <div class="card">
                     <div class="config-section-header">
                         <h3>📜 Registro de Atividades</h3>
-                        <small style="color: var(--text-muted);">Veja tudo o que você fez na rede social</small>
+                        <small style="color: var(--text-muted);">Veja tudo o que você fez no XXtap</small>
                     </div>
                     <div id="activityLogList" class="activity-log-list" style="margin-top: 15px;">
                         <p style="color: var(--text-muted);">Carregando suas atividades...</p>
                     </div>
                 </div>
 
-                <!-- Seção 2: Segurança & Troca de Senha -->
                 <div class="card">
                     <div class="config-section-header">
                         <h3>🔒 Segurança da Conta</h3>
@@ -231,12 +231,11 @@
                     </div>
                     <div style="margin-top: 12px;">
                         <button class="btn-security" onclick="iniciarTrocaSenhaLogado()">
-                            Redefinir Minha Senha (Código de 6 Dígitos)
+                            Redefinir Minha Senha (Código 6 Dígitos)
                         </button>
                     </div>
                 </div>
 
-                <!-- Seção 3: Privacidade & Contas Bloqueadas -->
                 <div class="card">
                     <div class="config-section-header">
                         <h3>🚫 Usuários Bloqueados</h3>
@@ -251,6 +250,37 @@
         </main>
 
     </div>
+
+    <!-- BARRA INFERIOR DE NAVEGAÇÃO MOBILE (ESTILO APP INSTAGRAM/TIKTOK) -->
+    <nav class="mobile-bottom-bar" id="mobileBottomBar" style="display: none;">
+        <button class="mobile-nav-btn active" id="mBtnTabFeed" onclick="mudarAbaPrincipal('feed')">
+            <span class="m-icon">🏠</span>
+            <small>Feed</small>
+        </button>
+        <button class="mobile-nav-btn" id="mBtnTabMensagens" onclick="mudarAbaPrincipal('mensagens')">
+            <span class="m-icon">💬</span>
+            <small>Chat</small>
+        </button>
+        <button class="mobile-nav-btn" id="mBtnTabNotificacoes" onclick="mudarAbaPrincipal('notificacoes')">
+            <span class="m-icon" style="position: relative;">
+                🔔
+                <span id="mBadgeNotificacoes" class="m-badge" style="display: none;"></span>
+            </span>
+            <small>Notif</small>
+        </button>
+        <button class="mobile-nav-btn" id="mBtnTabSalvos" onclick="mudarAbaPrincipal('salvos')">
+            <span class="m-icon">🔖</span>
+            <small>Salvos</small>
+        </button>
+        <button class="mobile-nav-btn" id="mBtnTabPerfil" onclick="mudarAbaPrincipal('perfil')">
+            <span class="m-icon">👤</span>
+            <small>Perfil</small>
+        </button>
+        <button class="mobile-nav-btn" id="mBtnTabConfig" onclick="mudarAbaPrincipal('config')">
+            <span class="m-icon">⚙️</span>
+            <small>Ajustes</small>
+        </button>
+    </nav>
 
     <!-- MODAL DE VISUALIZAÇÃO DE STORY -->
     <div id="storyModal" class="story-modal" style="display: none;" onclick="fecharStoryModal(event)">

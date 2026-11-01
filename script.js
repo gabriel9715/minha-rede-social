@@ -3,18 +3,18 @@ let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 let fotoPerfilComprimidaTemp = null;
 let postMidiaTemp = null;
 
-// Abas e Navegação Principal
-let abaAtiva = 'feed'; // 'feed' | 'mensagens' | 'notificacoes' | 'salvos'
+// Abas
+let abaAtiva = 'feed';
 
 // Stories
 let storiesCarregados = [];
 let timerStoryProgress = null;
 
-// Chat / Direct
-let contatoAtivoDirect = null; // { id, nome }
+// Chat
+let contatoAtivoDirect = null;
 let timerPollingDirect = null;
 
-// Polling de Notificações
+// Notificações
 let timerPollingNotif = null;
 
 window.onload = async () => {
@@ -39,23 +39,93 @@ async function sincronizarPerfilDoServidor() {
     }
 }
 
-// ================= CONTROLE DE ABAS PRINCIPAIS =================
+// ================= CONTROLE DE RECUPERAÇÃO DE SENHA =================
+function abrirRecuperarSenha() {
+    document.getElementById('authFormNormal').style.display = 'none';
+    document.getElementById('authFormRecuperar').style.display = 'block';
+    document.getElementById('passo1Codigo').style.display = 'block';
+    document.getElementById('passo2Redefinir').style.display = 'none';
+    document.getElementById('recuperarEmail').value = document.getElementById('authEmail').value || '';
+}
+
+function voltarParaLogin() {
+    document.getElementById('authFormNormal').style.display = 'block';
+    document.getElementById('authFormRecuperar').style.display = 'none';
+}
+
+function iniciarTrocaSenhaLogado() {
+    if (!usuarioLogado) return;
+    abrirRecuperarSenha();
+    document.getElementById('recuperarEmail').value = usuarioLogado.email;
+    solicitarCodigoSeguranca();
+}
+
+async function solicitarCodigoSeguranca() {
+    const email = document.getElementById('recuperarEmail').value.trim();
+    if (!email) return alert("Por favor, digite seu e-mail!");
+
+    try {
+        const resposta = await fetch('/api/recuperar/solicitar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            alert(`✅ ${dados.mensagem}\n\n[CÓDIGO DE TESTE]: ${dados.codigoSimulado}\n(Digite esse código no passo a seguir)`);
+            document.getElementById('passo1Codigo').style.display = 'none';
+            document.getElementById('passo2Redefinir').style.display = 'block';
+        } else {
+            alert(dados.erro);
+        }
+    } catch {
+        alert("Erro na conexão ao solicitar código.");
+    }
+}
+
+async function confirmarTrocaDeSenha() {
+    const email = document.getElementById('recuperarEmail').value.trim();
+    const codigo = document.getElementById('recuperarCodigo').value.trim();
+    const novaSenha = document.getElementById('recuperarNovaSenha').value.trim();
+
+    if (!codigo || !novaSenha) return alert("Digite o código e a nova senha!");
+
+    try {
+        const resposta = await fetch('/api/recuperar/confirmar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, codigo, novaSenha })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            alert(dados.mensagem);
+            voltarParaLogin();
+            document.getElementById('authEmail').value = email;
+            document.getElementById('authSenha').value = novaSenha;
+        } else {
+            alert(dados.erro);
+        }
+    } catch {
+        alert("Erro na conexão ao redefinir senha.");
+    }
+}
+
+// ================= CONTROLE DE ABAS =================
 function mudarAbaPrincipal(novaAba) {
     abaAtiva = novaAba;
 
-    // Atualiza botões superiores
     document.querySelectorAll('.nav-tab-btn').forEach(btn => btn.classList.remove('active'));
     if (document.getElementById(`btnTab${capitalizar(novaAba)}`)) {
         document.getElementById(`btnTab${capitalizar(novaAba)}`).classList.add('active');
     }
 
-    // Esconde todas as visualizações
     document.getElementById('viewFeed').style.display = 'none';
     document.getElementById('viewMensagens').style.display = 'none';
     document.getElementById('viewNotificacoes').style.display = 'none';
     document.getElementById('viewSalvos').style.display = 'none';
 
-    // Para o polling do chat caso saia da aba de mensagens
     if (novaAba !== 'mensagens' && timerPollingDirect) {
         clearInterval(timerPollingDirect);
         contatoAtivoDirect = null;
@@ -88,7 +158,7 @@ function capitalizar(texto) {
 function iniciarMonitoramentoNotificacoes() {
     verificarContadorNotificacoes();
     if (timerPollingNotif) clearInterval(timerPollingNotif);
-    timerPollingNotif = setInterval(verificarContadorNotificacoes, 6000); // Checa a cada 6 segundos
+    timerPollingNotif = setInterval(verificarContadorNotificacoes, 6000);
 }
 
 async function verificarContadorNotificacoes() {
@@ -166,7 +236,7 @@ async function limparNotificacoes() {
     }
 }
 
-// ================= ABA DE MENSAGENS (DIRECT) =================
+// ================= DIRECT / CHAT =================
 async function carregarContatosDirect() {
     const list = document.getElementById('directContactsList');
     list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 15px;">Carregando...</p>';
@@ -212,9 +282,7 @@ async function abrirConversaDirect(contatoId, contatoNome) {
 
     document.getElementById('directActiveUserName').innerText = `Conversando com ${contatoNome}`;
 
-    // Marca o contato ativo na sidebar
     carregarContatosDirect();
-
     await buscarMensagensDirect();
 
     if (timerPollingDirect) clearInterval(timerPollingDirect);
@@ -289,7 +357,7 @@ function checarEnterDirect(event) {
     }
 }
 
-// ================= GERAL, PERFIL & AUTENTICAÇÃO =================
+// ================= GERAL E AUTENTICAÇÃO =================
 function alternarTema() {
     document.body.classList.toggle('dark-mode');
     const isDark = document.body.classList.contains('dark-mode');
@@ -921,6 +989,8 @@ async function alternarSeguir(alvoId, botao) {
             botao.innerText = dados.seguindoAgora ? 'Seguindo' : '+ Seguir';
             
             document.getElementById('statSeguindo').innerText = dados.seguindo.length;
+        } else {
+            alert(dados.erro);
         }
     } catch {
         alert("Erro ao seguir usuário.");

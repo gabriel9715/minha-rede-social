@@ -41,18 +41,56 @@
         
         <!-- Coluna Esquerda: Login / Meu Perfil -->
         <aside class="auth-section">
+            
+            <!-- Painel de Login/Cadastro/Recuperação -->
             <div class="card" id="authBox">
-                <h3 id="authTitle">Entrar na Conta</h3>
-                <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
-                <input type="email" id="authEmail" placeholder="Seu e-mail">
-                <input type="password" id="authSenha" placeholder="Sua senha">
-                <button id="authBtn" onclick="executarAutenticacao()">Entrar</button>
-                <p class="toggle-link">
-                    <span id="toggleText">Não tem conta?</span>
-                    <a href="javascript:void(0)" onclick="alternarModoAuth()">Cadastre-se</a>
-                </p>
+                <!-- Modo Login / Cadastro -->
+                <div id="authFormNormal">
+                    <h3 id="authTitle">Entrar na Conta</h3>
+                    <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
+                    <input type="email" id="authEmail" placeholder="Seu e-mail">
+                    <input type="password" id="authSenha" placeholder="Sua senha">
+                    <button id="authBtn" onclick="executarAutenticacao()">Entrar</button>
+                    
+                    <p class="toggle-link" style="margin-top: 10px;">
+                        <a href="javascript:void(0)" onclick="abrirRecuperarSenha()" style="font-size: 0.85rem; color: var(--text-muted);">Esqueceu a senha?</a>
+                    </p>
+
+                    <p class="toggle-link">
+                        <span id="toggleText">Não tem conta?</span>
+                        <a href="javascript:void(0)" onclick="alternarModoAuth()">Cadastre-se</a>
+                    </p>
+                </div>
+
+                <!-- Modo Recuperação de Senha -->
+                <div id="authFormRecuperar" style="display: none;">
+                    <h3>Recuperar Senha 🔑</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 5px;">
+                        Solicite o código de 6 dígitos para redefinir sua senha com segurança.
+                    </p>
+
+                    <div id="passo1Codigo">
+                        <input type="email" id="recuperarEmail" placeholder="Digite seu e-mail cadastrado">
+                        <button class="btn-primary" style="width: 100%; margin-top: 10px;" onclick="solicitarCodigoSeguranca()">
+                            Enviar Código de 6 Dígitos
+                        </button>
+                    </div>
+
+                    <div id="passo2Redefinir" style="display: none; margin-top: 12px;">
+                        <input type="text" id="recuperarCodigo" placeholder="Código de 6 dígitos" maxlength="6">
+                        <input type="password" id="recuperarNovaSenha" placeholder="Digite sua nova senha">
+                        <button class="btn-save-profile" style="width: 100%; margin-top: 10px;" onclick="confirmarTrocaDeSenha()">
+                            Confirmar Nova Senha
+                        </button>
+                    </div>
+
+                    <p class="toggle-link" style="margin-top: 14px;">
+                        <a href="javascript:void(0)" onclick="voltarParaLogin()">Voltar para o Login</a>
+                    </p>
+                </div>
             </div>
 
+            <!-- Painel do Meu Perfil -->
             <div class="card" id="profileBox" style="display: none;">
                 <div class="profile-preview">
                     <img id="myAvatarImg" src="https://via.placeholder.com/150/1877f2/ffffff?text=Perfil" alt="Avatar" class="avatar-large">
@@ -81,6 +119,10 @@
 
                 <textarea id="editBio" placeholder="Escreva sua biografia..." maxlength="120"></textarea>
                 <button class="btn-save-profile" onclick="salvarPerfil()">Salvar Perfil</button>
+
+                <!-- Botão de Segurança: Trocar Senha Logado -->
+                <button class="btn-security" onclick="iniciarTrocaSenhaLogado()">🔒 Redefinir Senha</button>
+
                 <button class="btn-logout" onclick="deslogar()">Sair da Conta</button>
             </div>
         </aside>
@@ -88,9 +130,8 @@
         <!-- Coluna Principal: Conteúdo Dinâmico das Abas -->
         <main class="feed-section">
             
-            <!-- ================= ABA 1: FEED ================= -->
+            <!-- ABA 1: FEED -->
             <div id="viewFeed">
-                <!-- Barra de Stories -->
                 <section class="card stories-bar" id="storiesBar">
                     <div class="story-item" onclick="acionarUploadStory()">
                         <div class="story-avatar-wrap add-story-wrap">
@@ -103,7 +144,6 @@
                     <div id="storiesList" class="stories-list"></div>
                 </section>
                 
-                <!-- Criar Post -->
                 <div class="card create-post" id="boxCriarPost">
                     <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
                     
@@ -123,19 +163,15 @@
 
                 <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente 🌐</h3>
 
-                <section id="feed" class="feed">
-                    <!-- Posts entram aqui -->
-                </section>
+                <section id="feed" class="feed"></section>
             </div>
 
-            <!-- ================= ABA 2: MENSAGENS / DIRECT ================= -->
+            <!-- ABA 2: MENSAGENS / DIRECT -->
             <div id="viewMensagens" style="display: none;">
                 <div class="card direct-chat-card">
                     <div class="direct-chat-sidebar">
                         <h4>Conversas</h4>
-                        <div id="directContactsList" class="direct-contacts-list">
-                            <!-- Contatos entram aqui -->
-                        </div>
+                        <div id="directContactsList" class="direct-contacts-list"></div>
                     </div>
                     <div class="direct-chat-main">
                         <div id="directChatEmpty" class="direct-empty-state">
@@ -145,9 +181,7 @@
                             <div class="direct-chat-header">
                                 <strong id="directActiveUserName">Nome</strong>
                             </div>
-                            <div id="directMessagesBody" class="direct-messages-body">
-                                <!-- Mensagens entram aqui -->
-                            </div>
+                            <div id="directMessagesBody" class="direct-messages-body"></div>
                             <div class="direct-input-bar">
                                 <input type="text" id="directMsgInput" placeholder="Digite uma mensagem..." onkeydown="checarEnterDirect(event)">
                                 <button onclick="enviarMensagemDirect()">Enviar</button>
@@ -157,25 +191,21 @@
                 </div>
             </div>
 
-            <!-- ================= ABA 3: NOTIFICAÇÕES ================= -->
+            <!-- ABA 3: NOTIFICAÇÕES -->
             <div id="viewNotificacoes" style="display: none;">
                 <div class="card">
                     <div class="notif-header">
                         <h3>Suas Notificações 🔔</h3>
                         <button class="btn-clear-notif" onclick="limparNotificacoes()">Limpar Todas</button>
                     </div>
-                    <div id="notificacoesList" class="notif-list">
-                        <!-- Notificações entram aqui -->
-                    </div>
+                    <div id="notificacoesList" class="notif-list"></div>
                 </div>
             </div>
 
-            <!-- ================= ABA 4: SALVOS ================= -->
+            <!-- ABA 4: SALVOS -->
             <div id="viewSalvos" style="display: none;">
                 <h3 style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Publicações Salvas 🔖</h3>
-                <section id="feedSalvos" class="feed">
-                    <!-- Posts salvos entram aqui -->
-                </section>
+                <section id="feedSalvos" class="feed"></section>
             </div>
 
         </main>

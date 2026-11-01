@@ -31,7 +31,9 @@ async function iniciarBanco() {
                 salvos JSONB DEFAULT '[]'::jsonb,
                 seguindo JSONB DEFAULT '[]'::jsonb,
                 seguidores JSONB DEFAULT '[]'::jsonb,
-                bloqueados JSONB DEFAULT '[]'::jsonb
+                bloqueados JSONB DEFAULT '[]'::jsonb,
+                codigo_recuperacao TEXT,
+                codigo_expira BIGINT
             );
 
             CREATE TABLE IF NOT EXISTS posts (
@@ -63,14 +65,13 @@ async function iniciarBanco() {
                 criado_em BIGINT NOT NULL
             );
 
-            -- Nova Tabela de Notificações
             CREATE TABLE IF NOT EXISTS notificacoes (
                 id BIGSERIAL PRIMARY KEY,
                 usuario_id BIGINT REFERENCES usuarios(id),
                 autor_acao_id BIGINT REFERENCES usuarios(id),
                 autor_acao_nome TEXT NOT NULL,
                 autor_acao_foto TEXT,
-                tipo TEXT NOT NULL, -- 'curtida', 'salvou', 'comentario', 'seguiu'
+                tipo TEXT NOT NULL,
                 detalhe TEXT,
                 lida BOOLEAN DEFAULT FALSE,
                 criado_em BIGINT NOT NULL
@@ -80,21 +81,21 @@ async function iniciarBanco() {
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguindo JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS seguidores JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bloqueados JSONB DEFAULT '[]'::jsonb;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_recuperacao TEXT;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_expira BIGINT;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS comentarios JSONB DEFAULT '[]'::jsonb;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_url TEXT;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_tipo TEXT;
         `);
-        console.log("Banco sincronizado com Sistema de Notificações!");
+        console.log("Banco sincronizado com Suporte a Código de Recuperação de Senha!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
 }
 iniciarBanco();
 
-// Função Auxiliar para Criar Notificação
 async function criarNotificacao(destinatarioId, autorId, autorNome, tipo, detalhe) {
-    if (parseInt(destinatarioId) === parseInt(autorId)) return; // Não notifica a própria pessoa
-
+    if (parseInt(destinatarioId) === parseInt(autorId)) return;
     try {
         const autorRes = await pool.query(`SELECT foto FROM usuarios WHERE id = $1`, [autorId]);
         const autorFoto = autorRes.rows[0]?.foto || 'https://via.placeholder.com/150';
@@ -105,7 +106,7 @@ async function criarNotificacao(destinatarioId, autorId, autorNome, tipo, detalh
             [destinatarioId, autorId, autorNome, autorFoto, tipo, detalhe || "", Date.now()]
         );
     } catch (err) {
-        console.error("Erro ao criar notificação:", err);
+        console.error("Erro notificação:", err);
     }
 }
 
@@ -151,7 +152,91 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 3. Obter Perfil
+// ================= RECUPERAÇÃO / TROCA DE SENHA COM CÓDIGO =================
+
+// 3. Solicitar Código de 6 Dígitos
+app.post('/api/recuperar/solicitar', async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ erro: "Informe o e-mail." });
+
+    try {
+        const userRes = await pool.query(`SELECT id, nome FROM usuarios WHERE email = $1`, [email.trim()]);
+        if (userRes.rows.length === 0) {
+            return res.status(404).json({ erro: "Nenhuma conta encontrada com este e-mail." });
+        }
+
+        // Gera código numérico de 6 dígitos (ex: 839201)
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+        // Válido por 15 minutos (900.000 ms)
+        const expiraEm = Date.now() + (15 * 60 * 1000);
+
+        await pool.query(
+            `UPDATE usuarios SET codigo_recuperacao = $1, codigo_expira = $2 WHERE email = $3`,
+            [codigo, expiraEm, email.trim()]
+        );
+
+        console.log(`\n========================================`);
+        console.log(`[CÓDIGO DE RECUPERAÇÃO ENVIADO]`);
+        console.log(`Para: ${email}`);
+        console.log(`CÓDIGO DE 6 DÍGITOS: ${codigo}`);
+        console.log(`========================================\n`);
+
+        // Retorna o código na resposta para facilitar os testes imediatos sem SMTP
+        res.json({
+            sucesso: true,
+            mensagem: `Código gerado e enviado para ${email}!`,
+            codigoSimulado: codigo 
+        });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao gerar código de segurança." });
+    }
+});
+
+// 4. Confirmar Código e Redefinir Senha
+app.post('/api/recuperar/confirmar', async (req, res) => {
+    const { email, codigo, novaSenha } = req.body;
+    if (!email || !codigo || !novaSenha) {
+        return res.status(400).json({ erro: "Preencha todos os campos!" });
+    }
+
+    try {
+        const userRes = await pool.query(
+            `SELECT id, codigo_recuperacao, codigo_expira FROM usuarios WHERE email = $1`,
+            [email.trim()]
+        );
+
+        if (userRes.rows.length === 0) {
+            return res.status(404).json({ erro: "Usuário não encontrado." });
+        }
+
+        const usuario = userRes.rows[0];
+
+        // Valida se o código confere
+        if (!usuario.codigo_recuperacao || usuario.codigo_recuperacao !== codigo.trim()) {
+            return res.status(400).json({ erro: "Código de verificação incorreto!" });
+        }
+
+        // Valida se não expirou
+        if (Date.now() > parseInt(usuario.codigo_expira)) {
+            return res.status(400).json({ erro: "Este código expirou. Solicite um novo." });
+        }
+
+        // Criptografa a nova senha com bcrypt
+        const novaSenhaHash = bcrypt.hashSync(novaSenha, 10);
+
+        // Limpa o código para não ser reutilizado
+        await pool.query(
+            `UPDATE usuarios SET senha = $1, codigo_recuperacao = NULL, codigo_expira = NULL WHERE email = $2`,
+            [novaSenhaHash, email.trim()]
+        );
+
+        res.json({ mensagem: "Senha redefinida com sucesso! Você já pode entrar com sua nova senha." });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao redefinir senha." });
+    }
+});
+
+// 5. Obter Perfil
 app.get('/api/usuarios/:id/perfil', async (req, res) => {
     const id = req.params.id;
     try {
@@ -166,7 +251,7 @@ app.get('/api/usuarios/:id/perfil', async (req, res) => {
     }
 });
 
-// 4. Atualizar Perfil
+// 6. Atualizar Perfil
 app.put('/api/usuarios/:id', async (req, res) => {
     const id = req.params.id;
     const { foto, bio } = req.body;
@@ -183,7 +268,7 @@ app.put('/api/usuarios/:id', async (req, res) => {
     }
 });
 
-// 5. Seguir / Deixar de Seguir (Com Notificação)
+// 7. Seguir / Deixar de Seguir
 app.post('/api/usuarios/:id/seguir', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId, meuNome } = req.body;
@@ -220,7 +305,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
     }
 });
 
-// 6. Bloquear Usuário
+// 8. Bloquear Usuário
 app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId } = req.body;
@@ -249,7 +334,7 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     }
 });
 
-// 7. Salvar / Desalvar Post (Com Notificação)
+// 9. Salvar / Desalvar Post
 app.post('/api/posts/:id/salvar', async (req, res) => {
     const postId = parseInt(req.params.id);
     const { usuarioId, usuarioNome } = req.body;
@@ -263,8 +348,6 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
         if (index === -1) {
             salvos.push(postId);
             salvou = true;
-
-            // Busca quem é o dono do post para notificar
             const postRes = await pool.query(`SELECT autor_id FROM posts WHERE id = $1`, [postId]);
             if (postRes.rows.length > 0) {
                 await criarNotificacao(postRes.rows[0].autor_id, usuarioId, usuarioNome, 'salvou', 'salvou a sua publicação');
@@ -280,7 +363,7 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
     }
 });
 
-// 8. Listar Posts
+// 10. Listar Posts
 app.get('/api/posts', async (req, res) => {
     try {
         const query = `
@@ -299,10 +382,9 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-// 9. Criar Post
+// 11. Criar Post
 app.post('/api/posts', async (req, res) => {
     const { autorId, autorNome, conteudo, midiaUrl, midiaTipo } = req.body;
-    
     if ((!conteudo || !conteudo.trim()) && !midiaUrl) {
         return res.status(400).json({ erro: "Escreva algo ou anexe uma foto/vídeo para postar!" });
     }
@@ -322,7 +404,7 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-// 10. Curtir Post (Com Notificação)
+// 12. Curtir Post
 app.post('/api/posts/:id/curtir', async (req, res) => {
     const postId = req.params.id;
     const { usuarioId, usuarioNome } = req.body;
@@ -350,7 +432,7 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
     }
 });
 
-// 11. Comentar Post (Com Notificação)
+// 13. Comentar Post
 app.post('/api/posts/:id/comentar', async (req, res) => {
     const postId = req.params.id;
     const { autorId, autorNome, texto } = req.body;
@@ -365,14 +447,13 @@ app.post('/api/posts/:id/comentar', async (req, res) => {
         await pool.query(`UPDATE posts SET comentarios = $1 WHERE id = $2`, [JSON.stringify(comentarios), postId]);
 
         await criarNotificacao(postResult.rows[0].autor_id, autorId, autorNome, 'comentario', `comentou: "${texto.slice(0, 30)}..."`);
-
         res.status(201).json(novoComentario);
     } catch {
         res.status(500).json({ erro: "Erro ao comentar." });
     }
 });
 
-// 12. Stories
+// 14. Stories
 app.post('/api/stories', async (req, res) => {
     const { autorId, autorNome, midiaUrl, midiaTipo } = req.body;
     try {
@@ -406,7 +487,7 @@ app.get('/api/stories', async (req, res) => {
     }
 });
 
-// 13. Rotas de Chat
+// 15. Chat
 app.get('/api/chat/contatos/:meuId', async (req, res) => {
     const meuId = parseInt(req.params.meuId);
     try {
@@ -463,7 +544,7 @@ app.get('/api/chat/conversa', async (req, res) => {
     }
 });
 
-// 14. Rotas de Notificações
+// 16. Notificações
 app.get('/api/notificacoes/:usuarioId', async (req, res) => {
     const usuarioId = parseInt(req.params.usuarioId);
     try {

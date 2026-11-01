@@ -1,19 +1,40 @@
+:root {
+    --bg-page: #f0f2f5;
+    --bg-card: #ffffff;
+    --text-main: #1c1e21;
+    --text-muted: #65676b;
+    --border-color: #dddfe2;
+    --primary: #1877f2;
+    --primary-hover: #166fe5;
+}
+
+/* Cores quando ativado o Modo Escuro */
+body.dark-mode {
+    --bg-page: #18191a;
+    --bg-card: #242526;
+    --text-main: #e4e6eb;
+    --text-muted: #b0b3b8;
+    --border-color: #393a3b;
+    --primary: #2d88ff;
+    --primary-hover: #1877f2;
+}
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 body {
-    background-color: #f0f2f5;
-    color: #1c1e21;
+    background-color: var(--bg-page);
+    color: var(--text-main);
 }
 
-/* Barra superior */
 .navbar {
-    background-color: #ffffff;
-    border-bottom: 1px solid #dddfe2;
+    background-color: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
     padding: 12px 20px;
     display: flex;
     justify-content: space-between;
@@ -26,14 +47,25 @@ body {
 .logo {
     font-size: 1.4rem;
     font-weight: bold;
-    color: #1877f2;
+    color: var(--primary);
 }
 
-.logo span {
-    color: #333;
+.nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
 }
 
-/* Layout em Grid / Flex */
+.btn-theme {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
 .container {
     max-width: 950px;
     margin: 25px auto;
@@ -53,26 +85,32 @@ body {
     min-width: 320px;
 }
 
-/* Estilo padrão de Card */
 .card {
-    background: #ffffff;
+    background: var(--bg-card);
     padding: 16px;
     border-radius: 8px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     margin-bottom: 16px;
+    border: 1px solid var(--border-color);
 }
 
-/* Formulário de Login/Cadastro */
-.auth-section input {
+/* Formulários */
+input, textarea {
     width: 100%;
     padding: 10px;
     margin-top: 10px;
-    border: 1px solid #ccd0d5;
+    border: 1px solid var(--border-color);
     border-radius: 6px;
+    background-color: var(--bg-page);
+    color: var(--text-main);
     font-size: 0.95rem;
 }
 
-.auth-section button {
+button {
+    cursor: pointer;
+}
+
+.auth-section button#authBtn {
     width: 100%;
     padding: 10px;
     margin-top: 12px;
@@ -81,36 +119,79 @@ body {
     border: none;
     border-radius: 6px;
     font-weight: bold;
-    font-size: 1rem;
-    cursor: pointer;
-}
-
-.auth-section button:hover {
-    background-color: #36a420;
 }
 
 .toggle-link {
     margin-top: 14px;
     font-size: 0.85rem;
     text-align: center;
+    color: var(--text-muted);
 }
 
 .toggle-link a {
-    color: #1877f2;
+    color: var(--primary);
     text-decoration: none;
     font-weight: bold;
 }
 
-/* Caixa de Criar Post */
-.create-post textarea {
-    width: 100%;
+/* Painel de Perfil */
+.profile-preview {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.avatar-large {
+    width: 80px;
     height: 80px;
-    border: 1px solid #ccd0d5;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 8px;
+    border: 2px solid var(--primary);
+}
+
+.bio-text {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 15px 0;
+}
+
+.btn-save-profile {
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    background-color: var(--primary);
+    color: white;
+    border: none;
     border-radius: 6px;
-    padding: 10px;
+    font-weight: bold;
+}
+
+.btn-logout {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px;
+    background-color: #e4e6eb;
+    color: #333;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+body.dark-mode .btn-logout {
+    background-color: #3a3b3c;
+    color: #e4e6eb;
+}
+
+/* Post Box */
+.create-post textarea {
+    height: 80px;
     resize: none;
-    font-size: 1rem;
-    outline: none;
 }
 
 .post-actions {
@@ -120,20 +201,15 @@ body {
 }
 
 .btn-primary {
-    background-color: #1877f2;
+    background-color: var(--primary);
     color: white;
     border: none;
     padding: 8px 18px;
     border-radius: 6px;
     font-weight: bold;
-    cursor: pointer;
 }
 
-.btn-primary:hover {
-    background-color: #166fe5;
-}
-
-/* Cards do Feed */
+/* Feed Posts */
 .post-header {
     display: flex;
     align-items: center;
@@ -141,53 +217,42 @@ body {
     margin-bottom: 10px;
 }
 
-.avatar {
-    width: 38px;
-    height: 38px;
+.avatar-post {
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    background-color: #1877f2;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 0.9rem;
+    object-fit: cover;
 }
 
 .post-header small {
-    color: #65676b;
+    color: var(--text-muted);
 }
 
 .post-body {
-    line-height: 1.4;
+    line-height: 1.5;
     margin-bottom: 12px;
     word-break: break-word;
 }
 
 .post-footer {
-    border-top: 1px solid #e4e6eb;
+    border-top: 1px solid var(--border-color);
     padding-top: 8px;
 }
 
 .btn-like {
     background: none;
     border: none;
-    color: #65676b;
+    color: var(--text-muted);
     font-weight: bold;
-    cursor: pointer;
     font-size: 0.9rem;
 }
 
-.btn-like:hover {
+.btn-like.liked {
     color: #e41e3f;
 }
 
-/* Responsividade para Celulares */
 @media (max-width: 768px) {
     .container {
         flex-direction: column;
-    }
-    .auth-section, .feed-section {
-        width: 100%;
     }
 }

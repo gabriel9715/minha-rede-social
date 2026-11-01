@@ -1,44 +1,56 @@
 let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 
+// Carregar preferências e dados ao abrir
 window.onload = () => {
-    atualizarBarraUsuario();
+    carregarTema();
+    atualizarInterfaceUsuario();
     carregarPosts();
 };
 
-function alternarModoAuth() {
-    modoCadastro = !modoCadastro;
-    const nomeInput = document.getElementById('authNome');
-    const title = document.getElementById('authTitle');
-    const btn = document.getElementById('authBtn');
-    const toggleText = document.getElementById('toggleText');
+// --- MODO ESCURO / CLARO ---
+function alternarTema() {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('temaEscuro', isDark ? 'sim' : 'nao');
+    document.getElementById('themeBtn').innerText = isDark ? '☀️ Modo Claro' : '🌙 Modo Escuro';
+}
 
-    if (modoCadastro) {
-        nomeInput.style.display = 'block';
-        title.innerText = 'Criar Nova Conta';
-        btn.innerText = 'Cadastrar';
-        toggleText.innerText = 'Já tem uma conta?';
-    } else {
-        nomeInput.style.display = 'none';
-        title.innerText = 'Entrar na Conta';
-        btn.innerText = 'Entrar';
-        toggleText.innerText = 'Não tem conta?';
+function carregarTema() {
+    if (localStorage.getItem('temaEscuro') === 'sim') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('themeBtn').innerText = '☀️ Modo Claro';
     }
 }
 
-function atualizarBarraUsuario() {
+// --- AUTENTICAÇÃO E PERFIL ---
+function alternarModoAuth() {
+    modoCadastro = !modoCadastro;
+    document.getElementById('authNome').style.display = modoCadastro ? 'block' : 'none';
+    document.getElementById('authTitle').innerText = modoCadastro ? 'Criar Nova Conta' : 'Entrar na Conta';
+    document.getElementById('authBtn').innerText = modoCadastro ? 'Cadastrar' : 'Entrar';
+    document.getElementById('toggleText').innerText = modoCadastro ? 'Já tem uma conta?' : 'Não tem conta?';
+}
+
+function atualizarInterfaceUsuario() {
     const userStatus = document.getElementById('userStatus');
     const authBox = document.getElementById('authBox');
+    const profileBox = document.getElementById('profileBox');
 
     if (usuarioLogado) {
-        userStatus.innerHTML = `Logado como: <strong>${usuarioLogado.nome}</strong> | <a href="javascript:void(0)" onclick="deslogar()" style="color: red; text-decoration: none; margin-left: 8px;">Sair</a>`;
-        authBox.innerHTML = `
-            <h3>Olá, ${usuarioLogado.nome}!</h3>
-            <p style="margin-top: 10px; color: #666; font-size: 0.9rem;">Você está conectado. Deixe sua mensagem no feed!</p>
-            <button onclick="deslogar()" style="margin-top: 15px; background: #e4e6eb; color: #333; border: none; padding: 8px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold;">Trocar de Conta</button>
-        `;
+        userStatus.innerHTML = `Conectado: <strong>${usuarioLogado.nome}</strong>`;
+        authBox.style.display = 'none';
+        profileBox.style.display = 'block';
+
+        // Preenche o card do perfil
+        document.getElementById('profileName').innerText = usuarioLogado.nome;
+        document.getElementById('profileBio').innerText = usuarioLogado.bio || 'Sem biografia.';
+        document.getElementById('myAvatarImg').src = usuarioLogado.foto || 'https://via.placeholder.com/150';
+        document.getElementById('editBio').value = usuarioLogado.bio || '';
     } else {
         userStatus.innerHTML = `<span>Visitante</span>`;
+        authBox.style.display = 'block';
+        profileBox.style.display = 'none';
     }
 }
 
@@ -61,23 +73,42 @@ async function executarAutenticacao() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
         const dados = await resposta.json();
 
-        if (!resposta.ok) {
-            alert(dados.erro);
-            return;
-        }
+        if (!resposta.ok) return alert(dados.erro);
 
-        alert(dados.mensagem);
         usuarioLogado = dados.usuario;
         localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
         location.reload();
-    } catch (erro) {
-        alert("Erro ao conectar com o servidor.");
+    } catch {
+        alert("Erro na conexão com o servidor.");
     }
 }
 
+async function salvarPerfil() {
+    const foto = document.getElementById('editFoto').value.trim();
+    const bio = document.getElementById('editBio').value.trim();
+
+    try {
+        const resposta = await fetch(`/api/usuarios/${usuarioLogado.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ foto: foto || usuarioLogado.foto, bio })
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+            usuarioLogado = dados.usuario;
+            localStorage.setItem('usuarioLogado', JSON.stringify(usuarioLogado));
+            alert('Perfil atualizado com sucesso!');
+            location.reload();
+        }
+    } catch {
+        alert("Erro ao salvar perfil.");
+    }
+}
+
+// --- FEED E POSTS ---
 async function carregarPosts() {
     try {
         const resposta = await fetch('/api/posts');
@@ -85,20 +116,17 @@ async function carregarPosts() {
         const feed = document.getElementById('feed');
         feed.innerHTML = '';
 
-        if (posts.length === 0) {
-            feed.innerHTML = '<p style="text-align: center; color: #777;">Nenhum post ainda. Seja o primeiro a postar!</p>';
-            return;
-        }
-
         posts.forEach(post => {
-            const iniciais = post.autor.slice(0, 2).toUpperCase();
+            const curtidasArray = post.curtidas || [];
+            const curtiu = usuarioLogado && curtidasArray.includes(usuarioLogado.id);
+
             const postElement = document.createElement('article');
             postElement.classList.add('card', 'post');
             postElement.innerHTML = `
                 <div class="post-header">
-                    <div class="avatar">${iniciais}</div>
+                    <img src="${post.autorFoto}" class="avatar-post" alt="Avatar">
                     <div>
-                        <strong>${post.autor}</strong>
+                        <strong>${post.autorNome}</strong>
                         <small>• ${post.criadoEm}</small>
                     </div>
                 </div>
@@ -106,60 +134,64 @@ async function carregarPosts() {
                     ${post.conteudo}
                 </div>
                 <div class="post-footer">
-                    <button class="btn-like" onclick="curtirPost(${post.id}, this)">❤️ <span>${post.curtidas}</span> curtidas</button>
+                    <button class="btn-like ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
+                        ❤️ <span>${curtidasArray.length}</span> curtidas
+                    </button>
                 </div>
             `;
             feed.appendChild(postElement);
         });
-    } catch (erro) {
-        console.error("Erro ao carregar posts:", erro);
+    } catch (err) {
+        console.error(err);
     }
 }
 
-async function criarPostSimulado() {
-    if (!usuarioLogado) {
-        alert('Você precisa entrar ou se cadastrar para postar!');
-        return;
-    }
-
+async function criarPost() {
+    if (!usuarioLogado) return alert('Faça login para poder postar!');
     const input = document.getElementById('postContent');
     const conteudo = input.value.trim();
-
-    if (conteudo === '') {
-        alert('Digite algo antes de publicar!');
-        return;
-    }
+    if (!conteudo) return alert('Digite algo para publicar!');
 
     try {
         const resposta = await fetch('/api/posts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                autor: usuarioLogado.nome,
-                conteudo: conteudo
+                autorId: usuarioLogado.id,
+                autorNome: usuarioLogado.nome,
+                conteudo
             })
         });
 
         if (resposta.ok) {
             input.value = '';
             carregarPosts();
-        } else {
-            const dados = await resposta.json();
-            alert(dados.erro);
         }
-    } catch (erro) {
-        alert("Erro ao enviar o post.");
+    } catch {
+        alert("Erro ao publicar.");
     }
 }
 
 async function curtirPost(id, botao) {
+    if (!usuarioLogado) return alert('Faça login para curtir!');
+
     try {
-        const resposta = await fetch(`/api/posts/${id}/curtir`, { method: 'POST' });
+        const resposta = await fetch(`/api/posts/${id}/curtir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usuarioId: usuarioLogado.id })
+        });
+        const dados = await resposta.json();
+
         if (resposta.ok) {
-            const span = botao.querySelector('span');
-            span.innerText = parseInt(span.innerText) + 1;
+            botao.querySelector('span').innerText = dados.totalCurtidas;
+            if (dados.curtiu) {
+                botao.classList.add('liked');
+            } else {
+                botao.classList.remove('liked');
+            }
         }
-    } catch (erro) {
-        console.error("Erro ao curtir:", erro);
+    } catch (err) {
+        console.error(err);
     }
 }

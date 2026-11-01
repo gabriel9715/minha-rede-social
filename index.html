@@ -8,63 +8,65 @@
 </head>
 <body>
 
-    <!-- Barra de Navegação Superior -->
+    <!-- Barra Superior -->
     <header class="navbar">
         <div class="logo">RedeSocial<span>.dev</span></div>
-        <div class="user-status" id="userStatus">
-            <span>Visitante</span>
+        <div class="nav-controls">
+            <!-- Botão Modo Escuro -->
+            <button class="btn-theme" onclick="alternarTema()" id="themeBtn">🌙 Modo Escuro</button>
+            <div class="user-status" id="userStatus">
+                <span>Visitante</span>
+            </div>
         </div>
     </header>
 
     <div class="container">
         
-        <!-- Coluna Esquerda: Login / Cadastro -->
+        <!-- Coluna Esquerda: Login / Meu Perfil -->
         <aside class="auth-section">
+            <!-- Painel de Login/Cadastro (quando deslogado) -->
             <div class="card" id="authBox">
                 <h3 id="authTitle">Entrar na Conta</h3>
-                
                 <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
                 <input type="email" id="authEmail" placeholder="Seu e-mail">
                 <input type="password" id="authSenha" placeholder="Sua senha">
-                
                 <button id="authBtn" onclick="executarAutenticacao()">Entrar</button>
-                
                 <p class="toggle-link">
                     <span id="toggleText">Não tem conta?</span>
                     <a href="javascript:void(0)" onclick="alternarModoAuth()">Cadastre-se</a>
                 </p>
             </div>
+
+            <!-- Painel do Meu Perfil (quando logado) -->
+            <div class="card" id="profileBox" style="display: none;">
+                <div class="profile-preview">
+                    <img id="myAvatarImg" src="" alt="Avatar" class="avatar-large">
+                    <h3 id="profileName">Nome</h3>
+                    <p id="profileBio" class="bio-text">Sem biografia.</p>
+                </div>
+                <hr class="divider">
+                <h4>Editar Perfil</h4>
+                <input type="text" id="editFoto" placeholder="Link (URL) da foto de perfil">
+                <textarea id="editBio" placeholder="Escreva uma biografia..." maxlength="120"></textarea>
+                <button class="btn-save-profile" onclick="salvarPerfil()">Salvar Perfil</button>
+                <button class="btn-logout" onclick="deslogar()">Sair da Conta</button>
+            </div>
         </aside>
 
-        <!-- Coluna Principal: Feed de Notícias -->
+        <!-- Coluna Principal: Feed -->
         <main class="feed-section">
             
-            <!-- Caixa para Criar Nova Publicação -->
+            <!-- Criar Post -->
             <div class="card create-post">
-                <textarea id="postContent" placeholder="O que você está pensando hoje?"></textarea>
+                <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
                 <div class="post-actions">
-                    <button class="btn-primary" onclick="criarPostSimulado()">Publicar</button>
+                    <button class="btn-primary" onclick="criarPost()">Publicar</button>
                 </div>
             </div>
 
-            <!-- Lista de Publicações -->
+            <!-- Feed de Publicações -->
             <section id="feed" class="feed">
-                <!-- Posts de exemplo para testar a interface -->
-                <article class="card post">
-                    <div class="post-header">
-                        <div class="avatar">JS</div>
-                        <div>
-                            <strong>João Silva</strong>
-                            <small>• 10:45</small>
-                        </div>
-                    </div>
-                    <div class="post-body">
-                        Sejam todos bem-vindos à minha nova rede social! Em breve o servidor e o banco de dados estarão funcionando.
-                    </div>
-                    <div class="post-footer">
-                        <button class="btn-like" onclick="curtir(this)">❤️ <span>0</span> curtidas</button>
-                    </div>
-                </article>
+                <!-- Posts entram aqui via script.js -->
             </section>
 
         </main>

@@ -11,6 +11,24 @@
     <!-- Barra Superior -->
     <header class="navbar">
         <div class="logo">RedeSocial<span>.dev</span></div>
+        
+        <!-- Menu Central de Navegação por Abas -->
+        <nav class="nav-tabs" id="mainNavTabs" style="display: none;">
+            <button class="nav-tab-btn active" id="btnTabFeed" onclick="mudarAbaPrincipal('feed')" title="Feed Principal">
+                🌐 Feed
+            </button>
+            <button class="nav-tab-btn" id="btnTabMensagens" onclick="mudarAbaPrincipal('mensagens')" title="Mensagens Diretas">
+                💬 Mensagens
+            </button>
+            <button class="nav-tab-btn nav-btn-badge" id="btnTabNotificacoes" onclick="mudarAbaPrincipal('notificacoes')" title="Notificações">
+                🔔 Notificações
+                <span id="badgeNotificacoes" class="badge-count" style="display: none;">0</span>
+            </button>
+            <button class="nav-tab-btn" id="btnTabSalvos" onclick="mudarAbaPrincipal('salvos')" title="Posts Salvos">
+                🔖 Salvos
+            </button>
+        </nav>
+
         <div class="nav-controls">
             <button class="btn-theme" onclick="alternarTema()" id="themeBtn">🌙 Modo Escuro</button>
             <div class="user-status" id="userStatus">
@@ -23,7 +41,6 @@
         
         <!-- Coluna Esquerda: Login / Meu Perfil -->
         <aside class="auth-section">
-            <!-- Painel de Login/Cadastro -->
             <div class="card" id="authBox">
                 <h3 id="authTitle">Entrar na Conta</h3>
                 <input type="text" id="authNome" placeholder="Seu nome" style="display: none;">
@@ -36,7 +53,6 @@
                 </p>
             </div>
 
-            <!-- Painel do Meu Perfil -->
             <div class="card" id="profileBox" style="display: none;">
                 <div class="profile-preview">
                     <img id="myAvatarImg" src="https://via.placeholder.com/150/1877f2/ffffff?text=Perfil" alt="Avatar" class="avatar-large">
@@ -55,11 +71,6 @@
                     </div>
                 </div>
 
-                <div class="profile-tabs">
-                    <button id="tabFeedBtn" class="tab-btn active" onclick="trocarAbaFeed('todos')">🌐 Feed</button>
-                    <button id="tabSalvosBtn" class="tab-btn" onclick="trocarAbaFeed('salvos')">🔖 Salvos</button>
-                </div>
-
                 <hr class="divider">
                 <h4>Editar Perfil</h4>
                 
@@ -74,61 +85,109 @@
             </div>
         </aside>
 
-        <!-- Coluna Principal: Feed & Stories -->
+        <!-- Coluna Principal: Conteúdo Dinâmico das Abas -->
         <main class="feed-section">
             
-            <!-- BARRA DE STORIES -->
-            <section class="card stories-bar" id="storiesBar">
-                <!-- Story do Usuário (Adicionar) -->
-                <div class="story-item" onclick="acionarUploadStory()">
-                    <div class="story-avatar-wrap add-story-wrap">
-                        <img id="myStoryAvatar" src="https://via.placeholder.com/150" alt="Seu Story">
-                        <span class="plus-badge">+</span>
+            <!-- ================= ABA 1: FEED ================= -->
+            <div id="viewFeed">
+                <!-- Barra de Stories -->
+                <section class="card stories-bar" id="storiesBar">
+                    <div class="story-item" onclick="acionarUploadStory()">
+                        <div class="story-avatar-wrap add-story-wrap">
+                            <img id="myStoryAvatar" src="https://via.placeholder.com/150" alt="Seu Story">
+                            <span class="plus-badge">+</span>
+                        </div>
+                        <small>Seu Story</small>
                     </div>
-                    <small>Seu Story</small>
-                </div>
-                <input type="file" id="storyFileInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="enviarStory(event)">
-
-                <!-- Lista dinâmica com os stories de outros usuários -->
-                <div id="storiesList" class="stories-list"></div>
-            </section>
-            
-            <!-- Caixa de Criar Post -->
-            <div class="card create-post" id="boxCriarPost">
-                <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
+                    <input type="file" id="storyFileInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="enviarStory(event)">
+                    <div id="storiesList" class="stories-list"></div>
+                </section>
                 
-                <div id="mediaPreviewContainer" class="media-preview-box" style="display: none;">
-                    <div id="mediaPreviewContent"></div>
-                    <button class="btn-remove-media" onclick="removerMidiaAnexada()" title="Remover mídia">✖ Cancelar anexo</button>
+                <!-- Criar Post -->
+                <div class="card create-post" id="boxCriarPost">
+                    <textarea id="postContent" placeholder="O que você quer compartilhar hoje?"></textarea>
+                    
+                    <div id="mediaPreviewContainer" class="media-preview-box" style="display: none;">
+                        <div id="mediaPreviewContent"></div>
+                        <button class="btn-remove-media" onclick="removerMidiaAnexada()" title="Remover mídia">✖ Cancelar anexo</button>
+                    </div>
+
+                    <div class="post-actions">
+                        <label class="btn-attach" for="postMediaInput" title="Anexar foto ou vídeo">
+                            🎬/📷 Anexar Mídia
+                        </label>
+                        <input type="file" id="postMediaInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="previsualizarMidiaPost(event)">
+                        <button class="btn-primary" onclick="criarPost()">Publicar</button>
+                    </div>
                 </div>
 
-                <div class="post-actions">
-                    <label class="btn-attach" for="postMediaInput" title="Anexar foto ou vídeo">
-                        🎬/📷 Anexar Mídia
-                    </label>
-                    <input type="file" id="postMediaInput" accept="image/*,video/mp4,video/webm" style="display: none;" onchange="previsualizarMidiaPost(event)">
+                <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente 🌐</h3>
 
-                    <button class="btn-primary" onclick="criarPost()">Publicar</button>
+                <section id="feed" class="feed">
+                    <!-- Posts entram aqui -->
+                </section>
+            </div>
+
+            <!-- ================= ABA 2: MENSAGENS / DIRECT ================= -->
+            <div id="viewMensagens" style="display: none;">
+                <div class="card direct-chat-card">
+                    <div class="direct-chat-sidebar">
+                        <h4>Conversas</h4>
+                        <div id="directContactsList" class="direct-contacts-list">
+                            <!-- Contatos entram aqui -->
+                        </div>
+                    </div>
+                    <div class="direct-chat-main">
+                        <div id="directChatEmpty" class="direct-empty-state">
+                            <p>Selecione uma conversa à esquerda para começar.</p>
+                        </div>
+                        <div id="directChatActive" style="display: none; height: 100%; flex-direction: column;">
+                            <div class="direct-chat-header">
+                                <strong id="directActiveUserName">Nome</strong>
+                            </div>
+                            <div id="directMessagesBody" class="direct-messages-body">
+                                <!-- Mensagens entram aqui -->
+                            </div>
+                            <div class="direct-input-bar">
+                                <input type="text" id="directMsgInput" placeholder="Digite uma mensagem..." onkeydown="checarEnterDirect(event)">
+                                <button onclick="enviarMensagemDirect()">Enviar</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <h3 id="feedTitle" style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Feed Recente 🌐</h3>
+            <!-- ================= ABA 3: NOTIFICAÇÕES ================= -->
+            <div id="viewNotificacoes" style="display: none;">
+                <div class="card">
+                    <div class="notif-header">
+                        <h3>Suas Notificações 🔔</h3>
+                        <button class="btn-clear-notif" onclick="limparNotificacoes()">Limpar Todas</button>
+                    </div>
+                    <div id="notificacoesList" class="notif-list">
+                        <!-- Notificações entram aqui -->
+                    </div>
+                </div>
+            </div>
 
-            <section id="feed" class="feed">
-                <!-- Posts entram aqui via script.js -->
-            </section>
+            <!-- ================= ABA 4: SALVOS ================= -->
+            <div id="viewSalvos" style="display: none;">
+                <h3 style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-muted);">Publicações Salvas 🔖</h3>
+                <section id="feedSalvos" class="feed">
+                    <!-- Posts salvos entram aqui -->
+                </section>
+            </div>
 
         </main>
 
     </div>
 
-    <!-- MODAL DE VISUALIZAÇÃO DE STORY (TELA CHEIA) -->
+    <!-- MODAL DE VISUALIZAÇÃO DE STORY -->
     <div id="storyModal" class="story-modal" style="display: none;" onclick="fecharStoryModal(event)">
         <div class="story-viewer-box" onclick="event.stopPropagation()">
             <div class="story-progress-bar">
                 <div id="storyProgressFill" class="story-progress-fill"></div>
             </div>
-
             <div class="story-viewer-header">
                 <div class="story-viewer-user">
                     <img id="modalStoryAvatar" src="" alt="Avatar">
@@ -137,10 +196,7 @@
                 </div>
                 <button class="btn-close-story" onclick="fecharStoryModalDirect()">✖</button>
             </div>
-
-            <div id="modalStoryContent" class="story-media-wrapper">
-                <!-- Imagem ou vídeo carregado dinamicamente -->
-            </div>
+            <div id="modalStoryContent" class="story-media-wrapper"></div>
         </div>
     </div>
 

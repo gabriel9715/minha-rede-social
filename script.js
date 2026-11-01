@@ -2,20 +2,29 @@ let modoCadastro = false;
 let usuarioLogado = JSON.parse(localStorage.getItem('usuarioLogado')) || null;
 let fotoPerfilComprimidaTemp = null;
 let postMidiaTemp = null;
-let abaAtual = 'todos';
 
-// Variáveis para o Player de Story
+// Abas e Navegação Principal
+let abaAtiva = 'feed'; // 'feed' | 'mensagens' | 'notificacoes' | 'salvos'
+
+// Stories
 let storiesCarregados = [];
 let timerStoryProgress = null;
+
+// Chat / Direct
+let contatoAtivoDirect = null; // { id, nome }
+let timerPollingDirect = null;
+
+// Polling de Notificações
+let timerPollingNotif = null;
 
 window.onload = async () => {
     carregarTema();
     if (usuarioLogado) {
         await sincronizarPerfilDoServidor();
+        iniciarMonitoramentoNotificacoes();
     }
     atualizarInterfaceUsuario();
-    carregarStories();
-    carregarPosts();
+    mudarAbaPrincipal('feed');
 };
 
 async function sincronizarPerfilDoServidor() {
@@ -30,6 +39,257 @@ async function sincronizarPerfilDoServidor() {
     }
 }
 
+// ================= CONTROLE DE ABAS PRINCIPAIS =================
+function mudarAbaPrincipal(novaAba) {
+    abaAtiva = novaAba;
+
+    // Atualiza botões superiores
+    document.querySelectorAll('.nav-tab-btn').forEach(btn => btn.classList.remove('active'));
+    if (document.getElementById(`btnTab${capitalizar(novaAba)}`)) {
+        document.getElementById(`btnTab${capitalizar(novaAba)}`).classList.add('active');
+    }
+
+    // Esconde todas as visualizações
+    document.getElementById('viewFeed').style.display = 'none';
+    document.getElementById('viewMensagens').style.display = 'none';
+    document.getElementById('viewNotificacoes').style.display = 'none';
+    document.getElementById('viewSalvos').style.display = 'none';
+
+    // Para o polling do chat caso saia da aba de mensagens
+    if (novaAba !== 'mensagens' && timerPollingDirect) {
+        clearInterval(timerPollingDirect);
+        contatoAtivoDirect = null;
+    }
+
+    if (novaAba === 'feed') {
+        document.getElementById('viewFeed').style.display = 'block';
+        carregarStories();
+        carregarPosts();
+    } else if (novaAba === 'mensagens') {
+        if (!usuarioLogado) return alert("Faça login para acessar suas mensagens!");
+        document.getElementById('viewMensagens').style.display = 'block';
+        carregarContatosDirect();
+    } else if (novaAba === 'notificacoes') {
+        if (!usuarioLogado) return alert("Faça login para ver suas notificações!");
+        document.getElementById('viewNotificacoes').style.display = 'block';
+        carregarNotificacoes();
+    } else if (novaAba === 'salvos') {
+        if (!usuarioLogado) return alert("Faça login para ver seus posts salvos!");
+        document.getElementById('viewSalvos').style.display = 'block';
+        carregarPostsSalvos();
+    }
+}
+
+function capitalizar(texto) {
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+// ================= NOTIFICAÇÕES =================
+function iniciarMonitoramentoNotificacoes() {
+    verificarContadorNotificacoes();
+    if (timerPollingNotif) clearInterval(timerPollingNotif);
+    timerPollingNotif = setInterval(verificarContadorNotificacoes, 6000); // Checa a cada 6 segundos
+}
+
+async function verificarContadorNotificacoes() {
+    if (!usuarioLogado) return;
+    try {
+        const resposta = await fetch(`/api/notificacoes/${usuarioLogado.id}`);
+        const notificacoes = await resposta.json();
+        const badge = document.getElementById('badgeNotificacoes');
+
+        if (notificacoes.length > 0) {
+            badge.innerText = notificacoes.length;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch {}
+}
+
+async function carregarNotificacoes() {
+    const list = document.getElementById('notificacoesList');
+    list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Carregando...</p>';
+
+    try {
+        const resposta = await fetch(`/api/notificacoes/${usuarioLogado.id}`);
+        const notificacoes = await resposta.json();
+        list.innerHTML = '';
+
+        if (notificacoes.length === 0) {
+            list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 30px;">Nenhuma notificação por aqui ainda.</p>';
+            return;
+        }
+
+        notificacoes.forEach(n => {
+            const item = document.createElement('div');
+            item.classList.add('notif-item');
+
+            let icone = '🔔';
+            if (n.tipo === 'curtida') {
+                item.classList.add('notif-like');
+                icone = '❤️';
+            } else if (n.tipo === 'salvou') {
+                item.classList.add('notif-save');
+                icone = '🔖';
+            } else if (n.tipo === 'comentario') {
+                item.classList.add('notif-comment');
+                icone = '💬';
+            } else if (n.tipo === 'seguiu') {
+                icone = '➕';
+            }
+
+            const hora = new Date(parseInt(n.criadoEm)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            item.innerHTML = `
+                <img src="${n.autorAcaoFoto || 'https://via.placeholder.com/150'}" alt="${n.autorAcaoNome}">
+                <div class="notif-content">
+                    <span><strong>${n.autorAcaoNome}</strong> ${n.detalhe} ${icone}</span>
+                    <small>Hoje às ${hora}</small>
+                </div>
+            `;
+            list.appendChild(item);
+        });
+    } catch {
+        list.innerHTML = '<p style="text-align: center; color: red;">Erro ao carregar notificações.</p>';
+    }
+}
+
+async function limparNotificacoes() {
+    if (!confirm("Deseja apagar todas as notificações?")) return;
+    try {
+        await fetch(`/api/notificacoes/${usuarioLogado.id}`, { method: 'DELETE' });
+        document.getElementById('badgeNotificacoes').style.display = 'none';
+        carregarNotificacoes();
+    } catch {
+        alert("Erro ao limpar notificações.");
+    }
+}
+
+// ================= ABA DE MENSAGENS (DIRECT) =================
+async function carregarContatosDirect() {
+    const list = document.getElementById('directContactsList');
+    list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 15px;">Carregando...</p>';
+
+    try {
+        const resposta = await fetch(`/api/chat/contatos/${usuarioLogado.id}`);
+        const contatos = await resposta.json();
+        list.innerHTML = '';
+
+        if (contatos.length === 0) {
+            list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 15px;">Nenhum usuário disponível.</p>';
+            return;
+        }
+
+        contatos.forEach(c => {
+            const item = document.createElement('div');
+            item.classList.add('direct-contact-item');
+            if (contatoAtivoDirect && contatoAtivoDirect.id === parseInt(c.id)) {
+                item.classList.add('active');
+            }
+
+            item.onclick = () => abrirConversaDirect(c.id, c.nome);
+            item.innerHTML = `
+                <img src="${c.foto || 'https://via.placeholder.com/150'}" alt="${c.nome}">
+                <div>
+                    <strong>${c.nome}</strong>
+                    <br><small style="color: var(--text-muted);">Conversar</small>
+                </div>
+            `;
+            list.appendChild(item);
+        });
+    } catch {
+        list.innerHTML = '<p style="text-align: center; color: red;">Erro ao carregar contatos.</p>';
+    }
+}
+
+async function abrirConversaDirect(contatoId, contatoNome) {
+    contatoAtivoDirect = { id: parseInt(contatoId), nome: contatoNome };
+
+    document.getElementById('directChatEmpty').style.display = 'none';
+    const activeView = document.getElementById('directChatActive');
+    activeView.style.display = 'flex';
+
+    document.getElementById('directActiveUserName').innerText = `Conversando com ${contatoNome}`;
+
+    // Marca o contato ativo na sidebar
+    carregarContatosDirect();
+
+    await buscarMensagensDirect();
+
+    if (timerPollingDirect) clearInterval(timerPollingDirect);
+    timerPollingDirect = setInterval(buscarMensagensDirect, 3000);
+}
+
+async function buscarMensagensDirect() {
+    if (!contatoAtivoDirect || !usuarioLogado) return;
+
+    try {
+        const resposta = await fetch(`/api/chat/conversa?user1=${usuarioLogado.id}&user2=${contatoAtivoDirect.id}`);
+        const mensagens = await resposta.json();
+        const container = document.getElementById('directMessagesBody');
+        container.innerHTML = '';
+
+        if (mensagens.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 20px;">Diga olá para iniciar a conversa! 👋</p>';
+            return;
+        }
+
+        mensagens.forEach(m => {
+            const ehMeu = parseInt(m.remetenteId) === parseInt(usuarioLogado.id);
+            const hora = new Date(parseInt(m.criadoEm)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const balão = document.createElement('div');
+            balão.classList.add('msg-bubble', ehMeu ? 'sent' : 'received');
+            balão.innerHTML = `
+                <span>${m.texto}</span>
+                <small>${hora}</small>
+            `;
+            container.appendChild(balão);
+        });
+
+        container.scrollTop = container.scrollHeight;
+    } catch (e) {
+        console.warn("Erro ao buscar mensagens:", e);
+    }
+}
+
+async function enviarMensagemDirect() {
+    const input = document.getElementById('directMsgInput');
+    const texto = input.value.trim();
+    if (!texto || !contatoAtivoDirect) return;
+
+    input.value = '';
+
+    try {
+        const resposta = await fetch('/api/chat/mensagens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                remetenteId: parseInt(usuarioLogado.id),
+                destinatarioId: contatoAtivoDirect.id,
+                texto: texto
+            })
+        });
+
+        if (resposta.ok) {
+            buscarMensagensDirect();
+        } else {
+            const erroData = await resposta.json();
+            alert(erroData.erro || "Erro ao enviar mensagem.");
+        }
+    } catch {
+        alert("Erro na conexão ao enviar mensagem.");
+    }
+}
+
+function checarEnterDirect(event) {
+    if (event.key === 'Enter') {
+        enviarMensagemDirect();
+    }
+}
+
+// ================= GERAL, PERFIL & AUTENTICAÇÃO =================
 function alternarTema() {
     document.body.classList.toggle('dark-mode');
     const isDark = document.body.classList.contains('dark-mode');
@@ -56,12 +316,14 @@ function atualizarInterfaceUsuario() {
     const userStatus = document.getElementById('userStatus');
     const authBox = document.getElementById('authBox');
     const profileBox = document.getElementById('profileBox');
+    const mainNavTabs = document.getElementById('mainNavTabs');
     const myStoryAvatar = document.getElementById('myStoryAvatar');
 
     if (usuarioLogado) {
         userStatus.innerHTML = `Conectado: <strong>${usuarioLogado.nome}</strong>`;
         authBox.style.display = 'none';
         profileBox.style.display = 'block';
+        mainNavTabs.style.display = 'flex';
 
         document.getElementById('profileName').innerText = usuarioLogado.nome;
         document.getElementById('profileBio').innerText = usuarioLogado.bio || 'Sem biografia.';
@@ -77,6 +339,7 @@ function atualizarInterfaceUsuario() {
         userStatus.innerHTML = `<span>Visitante</span>`;
         authBox.style.display = 'block';
         profileBox.style.display = 'none';
+        mainNavTabs.style.display = 'none';
         myStoryAvatar.src = 'https://via.placeholder.com/150';
     }
 }
@@ -174,8 +437,7 @@ async function salvarPerfil() {
     }
 }
 
-// ================= LÓGICA DE STORIES =================
-
+// ================= STORIES =================
 function acionarUploadStory() {
     if (!usuarioLogado) return alert("Faça login para postar um Story!");
     document.getElementById('storyFileInput').click();
@@ -246,13 +508,11 @@ async function postarStoryServidor(midiaUrl, midiaTipo) {
         });
 
         if (resposta.ok) {
-            alert("Story publicado com sucesso! Ele desaparecerá em 24h.");
+            alert("Story publicado com sucesso! Ele sumirá em 24h.");
             carregarStories();
-        } else {
-            alert("Erro ao publicar Story.");
         }
     } catch {
-        alert("Erro na conexão ao enviar Story.");
+        alert("Erro ao enviar Story.");
     }
 }
 
@@ -264,8 +524,6 @@ async function carregarStories() {
         storiesList.innerHTML = '';
 
         const bloqueados = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
-
-        // Agrupa o story mais recente de cada usuário (exceto bloqueados)
         const usuariosVistos = new Set();
         
         storiesCarregados.forEach(story => {
@@ -286,7 +544,7 @@ async function carregarStories() {
             storiesList.appendChild(storyElement);
         });
     } catch (err) {
-        console.error("Erro ao carregar stories:", err);
+        console.error("Erro stories:", err);
     }
 }
 
@@ -296,12 +554,10 @@ function abrirStoryModal(story) {
     const author = document.getElementById('modalStoryAuthor');
     const time = document.getElementById('modalStoryTime');
     const content = document.getElementById('modalStoryContent');
-    const progressFill = document.getElementById('storyProgressFill');
 
     avatar.src = story.autorFoto;
     author.innerText = story.autorNome;
 
-    // Calcula há quantas horas foi postado
     const horasAtras = Math.floor((Date.now() - parseInt(story.criadoEm)) / (1000 * 60 * 60));
     time.innerText = `• ${horasAtras === 0 ? 'Agora' : horasAtras + 'h'}`;
 
@@ -319,7 +575,7 @@ function iniciarTemporizadorStory(tipo) {
     const progressFill = document.getElementById('storyProgressFill');
     progressFill.style.width = '0%';
 
-    let duracaoSegundos = tipo === 'video' ? 10 : 5; // 5s para imagem ou tempo fixo para vídeo
+    let duracaoSegundos = tipo === 'video' ? 10 : 5;
     let progresso = 0;
     const intervalo = 50;
     const incremento = 100 / ((duracaoSegundos * 1000) / intervalo);
@@ -350,8 +606,7 @@ function fecharStoryModal(event) {
     }
 }
 
-// ================= RESTANTE DO FEED =================
-
+// ================= FEED E POSTS =================
 function previsualizarMidiaPost(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
@@ -417,28 +672,6 @@ function removerMidiaAnexada() {
     document.getElementById('mediaPreviewContainer').style.display = 'none';
 }
 
-function trocarAbaFeed(aba) {
-    abaAtual = aba;
-    document.getElementById('tabFeedBtn').classList.toggle('active', aba === 'todos');
-    document.getElementById('tabSalvosBtn').classList.toggle('active', aba === 'salvos');
-
-    const feedTitle = document.getElementById('feedTitle');
-    const boxCriarPost = document.getElementById('boxCriarPost');
-    const storiesBar = document.getElementById('storiesBar');
-
-    if (aba === 'salvos') {
-        feedTitle.innerText = "Meus Posts Salvos 🔖";
-        boxCriarPost.style.display = 'none';
-        storiesBar.style.display = 'none';
-    } else {
-        feedTitle.innerText = "Feed Recente 🌐";
-        boxCriarPost.style.display = 'block';
-        storiesBar.style.display = 'flex';
-    }
-
-    carregarPosts();
-}
-
 async function carregarPosts() {
     try {
         const resposta = await fetch('/api/posts');
@@ -446,111 +679,137 @@ async function carregarPosts() {
         const feed = document.getElementById('feed');
         feed.innerHTML = '';
 
-        const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
         const bloqueadosDoUsuario = (usuarioLogado && usuarioLogado.bloqueados) ? usuarioLogado.bloqueados : [];
-        const seguindoDoUsuario = (usuarioLogado && usuarioLogado.seguindo) ? usuarioLogado.seguindo : [];
-
         posts = posts.filter(p => !bloqueadosDoUsuario.includes(parseInt(p.autorId)));
 
-        if (abaAtual === 'salvos') {
-            posts = posts.filter(p => salvosDoUsuario.includes(parseInt(p.id)));
-        }
-
         if (posts.length === 0) {
-            feed.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">
-                ${abaAtual === 'salvos' ? 'Você ainda não salvou nenhum post.' : 'Nenhum post disponível no momento.'}
-            </p>`;
+            feed.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhum post publicado ainda.</p>`;
             return;
         }
 
-        posts.forEach(post => {
-            const curtidasArray = post.curtidas || [];
-            const comentariosArray = post.comentarios || [];
-            const curtiu = usuarioLogado && curtidasArray.includes(parseInt(usuarioLogado.id));
-            const salvou = salvosDoUsuario.includes(parseInt(post.id));
-            const ehMeuPost = usuarioLogado && parseInt(post.autorId) === parseInt(usuarioLogado.id);
-            const jaSegue = seguindoDoUsuario.includes(parseInt(post.autorId));
-
-            let midiaHTML = '';
-            if (post.midiaUrl) {
-                if (post.midiaTipo === 'video') {
-                    midiaHTML = `
-                        <div class="post-media-container">
-                            <video src="${post.midiaUrl}" controls playsinline preload="metadata"></video>
-                        </div>
-                    `;
-                } else {
-                    midiaHTML = `
-                        <div class="post-media-container">
-                            <img src="${post.midiaUrl}" alt="Mídia do Post" loading="lazy">
-                        </div>
-                    `;
-                }
-            }
-
-            let comentariosHTML = '';
-            comentariosArray.forEach(c => {
-                comentariosHTML += `
-                    <div class="comment-item">
-                        <strong>${c.autorNome}:</strong> <span>${c.texto}</span>
-                    </div>
-                `;
-            });
-
-            const postElement = document.createElement('article');
-            postElement.classList.add('card', 'post');
-            postElement.innerHTML = `
-                <div class="post-header">
-                    <div class="post-user-info">
-                        <img src="${post.autorFoto}" class="avatar-post" alt="Avatar">
-                        <div>
-                            <strong>${post.autorNome}</strong>
-                            <small>• ${post.criadoEm}</small>
-                        </div>
-                    </div>
-                    
-                    ${(usuarioLogado && !ehMeuPost) ? `
-                        <div class="post-user-actions">
-                            <button class="btn-follow ${jaSegue ? 'following' : ''}" onclick="alternarSeguir(${post.autorId}, this)">
-                                ${jaSegue ? 'Seguindo' : '+ Seguir'}
-                            </button>
-                            <button class="btn-block" onclick="bloquearUsuario(${post.autorId}, '${post.autorNome}')" title="Bloquear usuário">
-                                🚫
-                            </button>
-                        </div>
-                    ` : ''}
-                </div>
-
-                ${post.conteudo ? `<div class="post-body">${post.conteudo}</div>` : ''}
-                
-                ${midiaHTML}
-
-                <div class="post-footer">
-                    <button class="btn-action ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
-                        ❤️ <span>${curtidasArray.length}</span> curtidas
-                    </button>
-                    <button class="btn-action ${salvou ? 'saved' : ''}" onclick="salvarPost(${post.id}, this)">
-                        🔖 <span>${salvou ? 'Salvo' : 'Salvar'}</span>
-                    </button>
-                </div>
-
-                <div class="comments-section">
-                    <div id="comments-list-${post.id}">
-                        ${comentariosHTML}
-                    </div>
-                    ${usuarioLogado ? `
-                        <div class="comment-input-box">
-                            <input type="text" id="comment-input-${post.id}" placeholder="Escreva um comentário...">
-                            <button onclick="adicionarComentario(${post.id})">Enviar</button>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-            feed.appendChild(postElement);
-        });
+        renderizarPostsNoElemento(posts, feed);
     } catch (err) {
         console.error(err);
     }
+}
+
+async function carregarPostsSalvos() {
+    try {
+        const resposta = await fetch('/api/posts');
+        let posts = await resposta.json();
+        const feedSalvos = document.getElementById('feedSalvos');
+        feedSalvos.innerHTML = '';
+
+        const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
+        posts = posts.filter(p => salvosDoUsuario.includes(parseInt(p.id)));
+
+        if (posts.length === 0) {
+            feedSalvos.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 30px;">Você ainda não salvou nenhum post.</p>`;
+            return;
+        }
+
+        renderizarPostsNoElemento(posts, feedSalvos);
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderizarPostsNoElemento(posts, elementoAlvo) {
+    const salvosDoUsuario = (usuarioLogado && usuarioLogado.salvos) ? usuarioLogado.salvos : [];
+    const seguindoDoUsuario = (usuarioLogado && usuarioLogado.seguindo) ? usuarioLogado.seguindo : [];
+
+    posts.forEach(post => {
+        const curtidasArray = post.curtidas || [];
+        const comentariosArray = post.comentarios || [];
+        const curtiu = usuarioLogado && curtidasArray.includes(parseInt(usuarioLogado.id));
+        const salvou = salvosDoUsuario.includes(parseInt(post.id));
+        const ehMeuPost = usuarioLogado && parseInt(post.autorId) === parseInt(usuarioLogado.id);
+        const jaSegue = seguindoDoUsuario.includes(parseInt(post.autorId));
+
+        let midiaHTML = '';
+        if (post.midiaUrl) {
+            if (post.midiaTipo === 'video') {
+                midiaHTML = `
+                    <div class="post-media-container">
+                        <video src="${post.midiaUrl}" controls playsinline preload="metadata"></video>
+                    </div>
+                `;
+            } else {
+                midiaHTML = `
+                    <div class="post-media-container">
+                        <img src="${post.midiaUrl}" alt="Mídia do Post" loading="lazy">
+                    </div>
+                `;
+            }
+        }
+
+        let comentariosHTML = '';
+        comentariosArray.forEach(c => {
+            comentariosHTML += `
+                <div class="comment-item">
+                    <strong>${c.autorNome}:</strong> <span>${c.texto}</span>
+                </div>
+            `;
+        });
+
+        const postElement = document.createElement('article');
+        postElement.classList.add('card', 'post');
+        postElement.innerHTML = `
+            <div class="post-header">
+                <div class="post-user-info">
+                    <img src="${post.autorFoto}" class="avatar-post" alt="Avatar">
+                    <div>
+                        <strong>${post.autorNome}</strong>
+                        <small>• ${post.criadoEm}</small>
+                    </div>
+                </div>
+                
+                ${(usuarioLogado && !ehMeuPost) ? `
+                    <div class="post-user-actions">
+                        <button class="btn-dm" onclick="abrirDirectDoPost(${post.autorId}, '${post.autorNome}')" title="Enviar Mensagem">
+                            ✉️ Chat
+                        </button>
+                        <button class="btn-follow ${jaSegue ? 'following' : ''}" onclick="alternarSeguir(${post.autorId}, this)">
+                            ${jaSegue ? 'Seguindo' : '+ Seguir'}
+                        </button>
+                        <button class="btn-block" onclick="bloquearUsuario(${post.autorId}, '${post.autorNome}')" title="Bloquear usuário">
+                            🚫
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+
+            ${post.conteudo ? `<div class="post-body">${post.conteudo}</div>` : ''}
+            ${midiaHTML}
+
+            <div class="post-footer">
+                <button class="btn-action ${curtiu ? 'liked' : ''}" onclick="curtirPost(${post.id}, this)">
+                    ❤️ <span>${curtidasArray.length}</span> curtidas
+                </button>
+                <button class="btn-action ${salvou ? 'saved' : ''}" onclick="salvarPost(${post.id}, this)">
+                    🔖 <span>${salvou ? 'Salvo' : 'Salvar'}</span>
+                </button>
+            </div>
+
+            <div class="comments-section">
+                <div id="comments-list-${post.id}">
+                    ${comentariosHTML}
+                </div>
+                ${usuarioLogado ? `
+                    <div class="comment-input-box">
+                        <input type="text" id="comment-input-${post.id}" placeholder="Escreva um comentário...">
+                        <button onclick="adicionarComentario(${post.id})">Enviar</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        elementoAlvo.appendChild(postElement);
+    });
+}
+
+function abrirDirectDoPost(autorId, autorNome) {
+    mudarAbaPrincipal('mensagens');
+    abrirConversaDirect(autorId, autorNome);
 }
 
 async function criarPost() {
@@ -597,7 +856,10 @@ async function curtirPost(id, botao) {
         const resposta = await fetch(`/api/posts/${id}/curtir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
+            body: JSON.stringify({ 
+                usuarioId: parseInt(usuarioLogado.id),
+                usuarioNome: usuarioLogado.nome
+            })
         });
         const dados = await resposta.json();
 
@@ -617,7 +879,10 @@ async function salvarPost(id, botao) {
         const resposta = await fetch(`/api/posts/${id}/salvar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuarioId: parseInt(usuarioLogado.id) })
+            body: JSON.stringify({ 
+                usuarioId: parseInt(usuarioLogado.id),
+                usuarioNome: usuarioLogado.nome
+            })
         });
         const dados = await resposta.json();
 
@@ -627,7 +892,7 @@ async function salvarPost(id, botao) {
             botao.classList.toggle('saved', dados.salvou);
             botao.querySelector('span').innerText = dados.salvou ? 'Salvo' : 'Salvar';
 
-            if (abaAtual === 'salvos') carregarPosts();
+            if (abaAtiva === 'salvos') carregarPostsSalvos();
         }
     } catch (err) {
         console.error(err);
@@ -641,7 +906,10 @@ async function alternarSeguir(alvoId, botao) {
         const resposta = await fetch(`/api/usuarios/${alvoId}/seguir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ meuId: parseInt(usuarioLogado.id) })
+            body: JSON.stringify({ 
+                meuId: parseInt(usuarioLogado.id),
+                meuNome: usuarioLogado.nome
+            })
         });
         const dados = await resposta.json();
 
@@ -653,8 +921,6 @@ async function alternarSeguir(alvoId, botao) {
             botao.innerText = dados.seguindoAgora ? 'Seguindo' : '+ Seguir';
             
             document.getElementById('statSeguindo').innerText = dados.seguindo.length;
-        } else {
-            alert(dados.erro);
         }
     } catch {
         alert("Erro ao seguir usuário.");
@@ -695,6 +961,7 @@ async function adicionarComentario(postId) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                autorId: parseInt(usuarioLogado.id),
                 autorNome: usuarioLogado.nome,
                 texto
             })

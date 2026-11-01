@@ -46,13 +46,33 @@ async function iniciarBanco() {
                 criado_em TEXT NOT NULL
             );
 
-            -- Nova Tabela de Stories (com timestamp para expirar em 24h)
             CREATE TABLE IF NOT EXISTS stories (
                 id BIGSERIAL PRIMARY KEY,
                 autor_id BIGINT REFERENCES usuarios(id),
                 autor_nome TEXT NOT NULL,
                 midia_url TEXT NOT NULL,
                 midia_tipo TEXT NOT NULL,
+                criado_em BIGINT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS mensagens (
+                id BIGSERIAL PRIMARY KEY,
+                remetente_id BIGINT REFERENCES usuarios(id),
+                destinatario_id BIGINT REFERENCES usuarios(id),
+                texto TEXT NOT NULL,
+                criado_em BIGINT NOT NULL
+            );
+
+            -- Nova Tabela de Notificações
+            CREATE TABLE IF NOT EXISTS notificacoes (
+                id BIGSERIAL PRIMARY KEY,
+                usuario_id BIGINT REFERENCES usuarios(id),
+                autor_acao_id BIGINT REFERENCES usuarios(id),
+                autor_acao_nome TEXT NOT NULL,
+                autor_acao_foto TEXT,
+                tipo TEXT NOT NULL, -- 'curtida', 'salvou', 'comentario', 'seguiu'
+                detalhe TEXT,
+                lida BOOLEAN DEFAULT FALSE,
                 criado_em BIGINT NOT NULL
             );
 
@@ -64,12 +84,30 @@ async function iniciarBanco() {
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_url TEXT;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_tipo TEXT;
         `);
-        console.log("Banco sincronizado com Suporte a Stories de 24h!");
+        console.log("Banco sincronizado com Sistema de Notificações!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
 }
 iniciarBanco();
+
+// Função Auxiliar para Criar Notificação
+async function criarNotificacao(destinatarioId, autorId, autorNome, tipo, detalhe) {
+    if (parseInt(destinatarioId) === parseInt(autorId)) return; // Não notifica a própria pessoa
+
+    try {
+        const autorRes = await pool.query(`SELECT foto FROM usuarios WHERE id = $1`, [autorId]);
+        const autorFoto = autorRes.rows[0]?.foto || 'https://via.placeholder.com/150';
+
+        await pool.query(
+            `INSERT INTO notificacoes (usuario_id, autor_acao_id, autor_acao_nome, autor_acao_foto, tipo, detalhe, criado_em)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [destinatarioId, autorId, autorNome, autorFoto, tipo, detalhe || "", Date.now()]
+        );
+    } catch (err) {
+        console.error("Erro ao criar notificação:", err);
+    }
+}
 
 // 1. Cadastrar
 app.post('/api/cadastrar', async (req, res) => {
@@ -145,20 +183,16 @@ app.put('/api/usuarios/:id', async (req, res) => {
     }
 });
 
-// 5. Seguir / Deixar de Seguir
+// 5. Seguir / Deixar de Seguir (Com Notificação)
 app.post('/api/usuarios/:id/seguir', async (req, res) => {
     const alvoId = parseInt(req.params.id);
-    const { meuId } = req.body;
+    const { meuId, meuNome } = req.body;
 
     if (alvoId === meuId) return res.status(400).json({ erro: "Você não pode seguir a si mesmo." });
 
     try {
         const meuRes = await pool.query(`SELECT seguindo FROM usuarios WHERE id = $1`, [meuId]);
         const alvoRes = await pool.query(`SELECT seguidores FROM usuarios WHERE id = $1`, [alvoId]);
-
-        if (meuRes.rows.length === 0 || alvoRes.rows.length === 0) {
-            return res.status(404).json({ erro: "Usuário não encontrado." });
-        }
 
         let meuSeguindo = meuRes.rows[0].seguindo || [];
         let alvoSeguidores = alvoRes.rows[0].seguidores || [];
@@ -170,6 +204,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
             meuSeguindo.push(alvoId);
             if (!alvoSeguidores.includes(meuId)) alvoSeguidores.push(meuId);
             seguindoAgora = true;
+            await criarNotificacao(alvoId, meuId, meuNome, 'seguiu', 'começou a seguir você');
         } else {
             meuSeguindo.splice(index, 1);
             const alvoIndex = alvoSeguidores.indexOf(meuId);
@@ -189,8 +224,6 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
 app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId } = req.body;
-
-    if (alvoId === meuId) return res.status(400).json({ erro: "Você não pode se bloquear." });
 
     try {
         const meuRes = await pool.query(`SELECT bloqueados, seguindo FROM usuarios WHERE id = $1`, [meuId]);
@@ -216,10 +249,10 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     }
 });
 
-// 7. Salvar / Desalvar Post
+// 7. Salvar / Desalvar Post (Com Notificação)
 app.post('/api/posts/:id/salvar', async (req, res) => {
     const postId = parseInt(req.params.id);
-    const { usuarioId } = req.body;
+    const { usuarioId, usuarioNome } = req.body;
 
     try {
         const userRes = await pool.query(`SELECT salvos FROM usuarios WHERE id = $1`, [usuarioId]);
@@ -230,6 +263,12 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
         if (index === -1) {
             salvos.push(postId);
             salvou = true;
+
+            // Busca quem é o dono do post para notificar
+            const postRes = await pool.query(`SELECT autor_id FROM posts WHERE id = $1`, [postId]);
+            if (postRes.rows.length > 0) {
+                await criarNotificacao(postRes.rows[0].autor_id, usuarioId, usuarioNome, 'salvou', 'salvou a sua publicação');
+            }
         } else {
             salvos.splice(index, 1);
         }
@@ -267,8 +306,6 @@ app.post('/api/posts', async (req, res) => {
     if ((!conteudo || !conteudo.trim()) && !midiaUrl) {
         return res.status(400).json({ erro: "Escreva algo ou anexe uma foto/vídeo para postar!" });
     }
-    if (!autorId) return res.status(400).json({ erro: "Autor não identificado." });
-
     const criadoEm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     try {
@@ -285,13 +322,15 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-// 10. Curtir Post
+// 10. Curtir Post (Com Notificação)
 app.post('/api/posts/:id/curtir', async (req, res) => {
     const postId = req.params.id;
-    const { usuarioId } = req.body;
+    const { usuarioId, usuarioNome } = req.body;
 
     try {
-        const postResult = await pool.query(`SELECT curtidas FROM posts WHERE id = $1`, [postId]);
+        const postResult = await pool.query(`SELECT autor_id, curtidas FROM posts WHERE id = $1`, [postId]);
+        if (postResult.rows.length === 0) return res.status(404).json({ erro: "Post não encontrado." });
+
         let curtidas = postResult.rows[0].curtidas || [];
         const index = curtidas.indexOf(usuarioId);
         let curtiu = false;
@@ -299,6 +338,7 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
         if (index === -1) {
             curtidas.push(usuarioId);
             curtiu = true;
+            await criarNotificacao(postResult.rows[0].autor_id, usuarioId, usuarioNome, 'curtida', 'curtiu sua publicação');
         } else {
             curtidas.splice(index, 1);
         }
@@ -310,19 +350,21 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
     }
 });
 
-// 11. Comentar Post
+// 11. Comentar Post (Com Notificação)
 app.post('/api/posts/:id/comentar', async (req, res) => {
     const postId = req.params.id;
-    const { autorNome, texto } = req.body;
+    const { autorId, autorNome, texto } = req.body;
     if (!texto) return res.status(400).json({ erro: "Comentário não pode ser vazio." });
 
     try {
-        const postResult = await pool.query(`SELECT comentarios FROM posts WHERE id = $1`, [postId]);
+        const postResult = await pool.query(`SELECT autor_id, comentarios FROM posts WHERE id = $1`, [postId]);
         let comentarios = postResult.rows[0].comentarios || [];
 
         const novoComentario = { id: Date.now(), autorNome, texto };
         comentarios.push(novoComentario);
         await pool.query(`UPDATE posts SET comentarios = $1 WHERE id = $2`, [JSON.stringify(comentarios), postId]);
+
+        await criarNotificacao(postResult.rows[0].autor_id, autorId, autorNome, 'comentario', `comentou: "${texto.slice(0, 30)}..."`);
 
         res.status(201).json(novoComentario);
     } catch {
@@ -330,32 +372,23 @@ app.post('/api/posts/:id/comentar', async (req, res) => {
     }
 });
 
-// ================= ROTAS DE STORIES (24 HORAS) =================
-
-// 12. Publicar Story
+// 12. Stories
 app.post('/api/stories', async (req, res) => {
     const { autorId, autorNome, midiaUrl, midiaTipo } = req.body;
-    if (!midiaUrl || !autorId) return res.status(400).json({ erro: "Mídia obrigatória para o Story." });
-
-    const agora = Date.now();
-
     try {
         const resultado = await pool.query(
             `INSERT INTO stories (autor_id, autor_nome, midia_url, midia_tipo, criado_em) 
              VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [autorId, autorNome, midiaUrl, midiaTipo, agora]
+            [autorId, autorNome, midiaUrl, midiaTipo, Date.now()]
         );
         res.status(201).json(resultado.rows[0]);
-    } catch (err) {
-        console.error(err);
+    } catch {
         res.status(500).json({ erro: "Erro ao publicar Story." });
     }
 });
 
-// 13. Listar Stories (Apenas das últimas 24 horas = 86400000 ms)
 app.get('/api/stories', async (req, res) => {
     const limite24h = Date.now() - (24 * 60 * 60 * 1000);
-
     try {
         const query = `
             SELECT s.id, s.autor_id AS "autorId", s.autor_nome AS "autorNome", 
@@ -368,8 +401,94 @@ app.get('/api/stories', async (req, res) => {
         `;
         const resultado = await pool.query(query, [limite24h]);
         res.json(resultado.rows);
-    } catch (err) {
+    } catch {
         res.status(500).json({ erro: "Erro ao carregar stories." });
+    }
+});
+
+// 13. Rotas de Chat
+app.get('/api/chat/contatos/:meuId', async (req, res) => {
+    const meuId = parseInt(req.params.meuId);
+    try {
+        const userRes = await pool.query(`SELECT bloqueados FROM usuarios WHERE id = $1`, [meuId]);
+        const bloqueados = userRes.rows[0]?.bloqueados || [];
+
+        const query = `
+            SELECT id, nome, foto FROM usuarios 
+            WHERE id != $1 AND NOT (id = ANY($2::bigint[]))
+            ORDER BY nome ASC
+        `;
+        const contatos = await pool.query(query, [meuId, bloqueados]);
+        res.json(contatos.rows);
+    } catch {
+        res.status(500).json({ erro: "Erro ao carregar contatos." });
+    }
+});
+
+app.post('/api/chat/mensagens', async (req, res) => {
+    const { remetenteId, destinatarioId, texto } = req.body;
+    try {
+        const destRes = await pool.query(`SELECT bloqueados FROM usuarios WHERE id = $1`, [destinatarioId]);
+        const bloqueados = destRes.rows[0]?.bloqueados || [];
+        if (bloqueados.includes(remetenteId)) {
+            return res.status(403).json({ erro: "Você foi bloqueado por esse usuário." });
+        }
+
+        const resultado = await pool.query(
+            `INSERT INTO mensagens (remetente_id, destinatario_id, texto, criado_em) 
+             VALUES ($1, $2, $3, $4) RETURNING *`,
+            [remetenteId, destinatarioId, texto.trim(), Date.now()]
+        );
+        res.status(201).json(resultado.rows[0]);
+    } catch {
+        res.status(500).json({ erro: "Erro ao enviar mensagem." });
+    }
+});
+
+app.get('/api/chat/conversa', async (req, res) => {
+    const { user1, user2 } = req.query;
+    try {
+        const query = `
+            SELECT m.id, m.remetente_id AS "remetenteId", m.destinatario_id AS "destinatarioId", 
+                   m.texto, m.criado_em AS "criadoEm"
+            FROM mensagens m
+            WHERE (m.remetente_id = $1 AND m.destinatario_id = $2)
+               OR (m.remetente_id = $2 AND m.destinatario_id = $1)
+            ORDER BY m.criado_em ASC
+        `;
+        const resultado = await pool.query(query, [user1, user2]);
+        res.json(resultado.rows);
+    } catch {
+        res.status(500).json({ erro: "Erro ao carregar conversa." });
+    }
+});
+
+// 14. Rotas de Notificações
+app.get('/api/notificacoes/:usuarioId', async (req, res) => {
+    const usuarioId = parseInt(req.params.usuarioId);
+    try {
+        const query = `
+            SELECT id, autor_acao_id AS "autorAcaoId", autor_acao_nome AS "autorAcaoNome", 
+                   autor_acao_foto AS "autorAcaoFoto", tipo, detalhe, lida, criado_em AS "criadoEm"
+            FROM notificacoes
+            WHERE usuario_id = $1
+            ORDER BY criado_em DESC
+            LIMIT 50
+        `;
+        const resultado = await pool.query(query, [usuarioId]);
+        res.json(resultado.rows);
+    } catch {
+        res.status(500).json({ erro: "Erro ao carregar notificações." });
+    }
+});
+
+app.delete('/api/notificacoes/:usuarioId', async (req, res) => {
+    const usuarioId = parseInt(req.params.usuarioId);
+    try {
+        await pool.query(`DELETE FROM notificacoes WHERE usuario_id = $1`, [usuarioId]);
+        res.json({ sucesso: true });
+    } catch {
+        res.status(500).json({ erro: "Erro ao limpar notificações." });
     }
 });
 

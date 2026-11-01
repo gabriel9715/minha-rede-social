@@ -18,7 +18,10 @@ app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(express.static(__dirname));
 
 async function iniciarBanco() {
-    if (!connectionString) return;
+    if (!connectionString) {
+        console.log("Aviso: DATABASE_URL não encontrada.");
+        return;
+    }
     try {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -77,7 +80,6 @@ async function iniciarBanco() {
                 criado_em BIGINT NOT NULL
             );
 
-            -- Tabela para Registro de Atividades do Usuário
             CREATE TABLE IF NOT EXISTS atividades (
                 id BIGSERIAL PRIMARY KEY,
                 usuario_id BIGINT REFERENCES usuarios(id),
@@ -96,7 +98,7 @@ async function iniciarBanco() {
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_url TEXT;
             ALTER TABLE posts ADD COLUMN IF NOT EXISTS midia_tipo TEXT;
         `);
-        console.log("Banco sincronizado com Suporte a Registro de Atividades!");
+        console.log("Banco sincronizado e pronto!");
     } catch (err) {
         console.error("Erro na inicialização do banco:", err);
     }
@@ -126,7 +128,7 @@ async function registrarAtividade(usuarioId, tipo, descricao) {
             [usuarioId, tipo, descricao, Date.now()]
         );
     } catch (err) {
-        console.error("Erro atividade:", err);
+        console.error("Erro ao registrar atividade:", err);
     }
 }
 
@@ -144,13 +146,18 @@ app.post('/api/cadastrar', async (req, res) => {
             `INSERT INTO usuarios (nome, email, senha, foto, bio, salvos, seguindo, seguidores, bloqueados) 
              VALUES ($1, $2, $3, $4, $5, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb) 
              RETURNING id, nome, email, foto, bio, salvos, seguindo, seguidores, bloqueados`,
-            [nome, email, senhaHash, fotoPadrao, bioPadrao]
+            [nome.trim(), email.trim().toLowerCase(), senhaHash, fotoPadrao, bioPadrao]
         );
 
-        await registrarAtividade(resultado.rows[0].id, 'conta', 'Criou a conta na rede social');
-        res.status(201).json({ mensagem: "Conta criada com sucesso!", usuario: resultado.rows[0] });
+        const novoUsuario = resultado.rows[0];
+
+        // Registra atividade em segundo plano sem travar o cadastro
+        registrarAtividade(novoUsuario.id, 'conta', 'Criou a conta na rede social');
+
+        res.status(201).json({ mensagem: "Conta criada com sucesso!", usuario: novoUsuario });
     } catch (err) {
         if (err.code === '23505') return res.status(400).json({ erro: "Este e-mail já está cadastrado." });
+        console.error("Erro no cadastro:", err);
         res.status(500).json({ erro: "Erro ao cadastrar usuário." });
     }
 });
@@ -158,8 +165,10 @@ app.post('/api/cadastrar', async (req, res) => {
 // 2. Login
 app.post('/api/login', async (req, res) => {
     const { email, senha } = req.body;
+    if (!email || !senha) return res.status(400).json({ erro: "Preencha e-mail e senha!" });
+
     try {
-        const resultado = await pool.query(`SELECT * FROM usuarios WHERE email = $1`, [email]);
+        const resultado = await pool.query(`SELECT * FROM usuarios WHERE LOWER(email) = LOWER($1)`, [email.trim()]);
         const usuario = resultado.rows[0];
 
         if (!usuario || !bcrypt.compareSync(senha, usuario.senha)) {
@@ -169,7 +178,8 @@ app.post('/api/login', async (req, res) => {
         const { senha: _, ...usuarioSemSenha } = usuario;
         res.json({ mensagem: "Login realizado com sucesso!", usuario: usuarioSemSenha });
     } catch (err) {
-        res.status(500).json({ erro: "Erro no login." });
+        console.error("Erro no login:", err);
+        res.status(500).json({ erro: "Erro no servidor ao fazer login." });
     }
 });
 
@@ -177,20 +187,20 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/recuperar/solicitar', async (req, res) => {
     const { email } = req.body;
     try {
-        const userRes = await pool.query(`SELECT id FROM usuarios WHERE email = $1`, [email.trim()]);
+        const userRes = await pool.query(`SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1)`, [email.trim()]);
         if (userRes.rows.length === 0) return res.status(404).json({ erro: "E-mail não encontrado." });
 
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
         const expiraEm = Date.now() + (15 * 60 * 1000);
 
         await pool.query(
-            `UPDATE usuarios SET codigo_recuperacao = $1, codigo_expira = $2 WHERE email = $3`,
+            `UPDATE usuarios SET codigo_recuperacao = $1, codigo_expira = $2 WHERE LOWER(email) = LOWER($3)`,
             [codigo, expiraEm, email.trim()]
         );
 
         res.json({
             sucesso: true,
-            mensagem: `Código gerado e enviado para ${email}!`,
+            mensagem: `Código gerado para ${email}!`,
             codigoSimulado: codigo 
         });
     } catch (err) {
@@ -202,7 +212,7 @@ app.post('/api/recuperar/confirmar', async (req, res) => {
     const { email, codigo, novaSenha } = req.body;
     try {
         const userRes = await pool.query(
-            `SELECT id, codigo_recuperacao, codigo_expira FROM usuarios WHERE email = $1`,
+            `SELECT id, codigo_recuperacao, codigo_expira FROM usuarios WHERE LOWER(email) = LOWER($1)`,
             [email.trim()]
         );
         if (userRes.rows.length === 0) return res.status(404).json({ erro: "Usuário não encontrado." });
@@ -217,11 +227,11 @@ app.post('/api/recuperar/confirmar', async (req, res) => {
 
         const novaSenhaHash = bcrypt.hashSync(novaSenha, 10);
         await pool.query(
-            `UPDATE usuarios SET senha = $1, codigo_recuperacao = NULL, codigo_expira = NULL WHERE email = $2`,
+            `UPDATE usuarios SET senha = $1, codigo_recuperacao = NULL, codigo_expira = NULL WHERE LOWER(email) = LOWER($2)`,
             [novaSenhaHash, email.trim()]
         );
 
-        await registrarAtividade(usuario.id, 'segurança', 'Redefiniu a senha de acesso');
+        registrarAtividade(usuario.id, 'segurança', 'Redefiniu a senha de acesso');
         res.json({ mensagem: "Senha redefinida com sucesso!" });
     } catch (err) {
         res.status(500).json({ erro: "Erro ao redefinir senha." });
@@ -254,14 +264,14 @@ app.put('/api/usuarios/:id', async (req, res) => {
              WHERE id = $3 RETURNING id, nome, email, foto, bio, salvos, seguindo, seguidores, bloqueados`,
             [foto, bio, id]
         );
-        await registrarAtividade(id, 'perfil', 'Atualizou a foto ou biografia do perfil');
+        registrarAtividade(id, 'perfil', 'Atualizou a foto ou biografia do perfil');
         res.json({ mensagem: "Perfil atualizado!", usuario: resultado.rows[0] });
     } catch (err) {
         res.status(500).json({ erro: "Erro ao atualizar perfil." });
     }
 });
 
-// 6. Listar Usuários Bloqueados Detalhado
+// 6. Bloqueados Detalhes
 app.get('/api/usuarios/:id/bloqueados-detalhes', async (req, res) => {
     const id = req.params.id;
     try {
@@ -280,7 +290,7 @@ app.get('/api/usuarios/:id/bloqueados-detalhes', async (req, res) => {
     }
 });
 
-// 7. Seguir / Deixar de Seguir
+// 7. Seguir
 app.post('/api/usuarios/:id/seguir', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId, meuNome } = req.body;
@@ -301,8 +311,8 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
             meuSeguindo.push(alvoId);
             if (!alvoSeguidores.includes(meuId)) alvoSeguidores.push(meuId);
             seguindoAgora = true;
-            await criarNotificacao(alvoId, meuId, meuNome, 'seguiu', 'começou a seguir você');
-            await registrarAtividade(meuId, 'social', `Começou a seguir ${alvoRes.rows[0]?.nome || 'um usuário'}`);
+            criarNotificacao(alvoId, meuId, meuNome, 'seguiu', 'começou a seguir você');
+            registrarAtividade(meuId, 'social', `Começou a seguir ${alvoRes.rows[0]?.nome || 'um usuário'}`);
         } else {
             meuSeguindo.splice(index, 1);
             const alvoIndex = alvoSeguidores.indexOf(meuId);
@@ -318,7 +328,7 @@ app.post('/api/usuarios/:id/seguir', async (req, res) => {
     }
 });
 
-// 8. Bloquear / Desbloquear Usuário
+// 8. Bloquear
 app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     const alvoId = parseInt(req.params.id);
     const { meuId } = req.body;
@@ -338,10 +348,10 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
             const segIndex = seguindo.indexOf(alvoId);
             if (segIndex !== -1) seguindo.splice(segIndex, 1);
             bloqueou = true;
-            await registrarAtividade(meuId, 'privacidade', `Bloqueou um usuário`);
+            registrarAtividade(meuId, 'privacidade', `Bloqueou um usuário`);
         } else {
             bloqueados.splice(index, 1);
-            await registrarAtividade(meuId, 'privacidade', `Desbloqueou um usuário`);
+            registrarAtividade(meuId, 'privacidade', `Desbloqueou um usuário`);
         }
 
         await pool.query(`UPDATE usuarios SET bloqueados = $1, seguindo = $2 WHERE id = $3`, [JSON.stringify(bloqueados), JSON.stringify(seguindo), meuId]);
@@ -351,7 +361,7 @@ app.post('/api/usuarios/:id/bloquear', async (req, res) => {
     }
 });
 
-// 9. Salvar / Desalvar Post
+// 9. Salvar Post
 app.post('/api/posts/:id/salvar', async (req, res) => {
     const postId = parseInt(req.params.id);
     const { usuarioId, usuarioNome } = req.body;
@@ -367,9 +377,9 @@ app.post('/api/posts/:id/salvar', async (req, res) => {
             salvou = true;
             const postRes = await pool.query(`SELECT autor_id FROM posts WHERE id = $1`, [postId]);
             if (postRes.rows.length > 0) {
-                await criarNotificacao(postRes.rows[0].autor_id, usuarioId, usuarioNome, 'salvou', 'salvou a sua publicação');
+                criarNotificacao(postRes.rows[0].autor_id, usuarioId, usuarioNome, 'salvou', 'salvou a sua publicação');
             }
-            await registrarAtividade(usuarioId, 'salvou', `Salvou uma publicação nos favoritos`);
+            registrarAtividade(usuarioId, 'salvou', `Salvou uma publicação nos favoritos`);
         } else {
             salvos.splice(index, 1);
         }
@@ -404,7 +414,7 @@ app.get('/api/posts', async (req, res) => {
 app.post('/api/posts', async (req, res) => {
     const { autorId, autorNome, conteudo, midiaUrl, midiaTipo } = req.body;
     if ((!conteudo || !conteudo.trim()) && !midiaUrl) {
-        return res.status(400).json({ erro: "Escreva algo ou anexe uma foto/vídeo para postar!" });
+        return res.status(400).json({ erro: "Escreva algo ou anexe foto/vídeo!" });
     }
     const criadoEm = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -417,14 +427,14 @@ app.post('/api/posts', async (req, res) => {
             [autorId, autorNome, conteudo || "", midiaUrl || null, midiaTipo || null, criadoEm]
         );
 
-        await registrarAtividade(autorId, 'publicou', `Publicou um novo post no feed`);
+        registrarAtividade(autorId, 'publicou', `Publicou um novo post no feed`);
         res.status(201).json(resultado.rows[0]);
     } catch (err) {
         res.status(500).json({ erro: "Erro ao salvar publicação." });
     }
 });
 
-// 12. Curtir Post
+// 12. Curtir
 app.post('/api/posts/:id/curtir', async (req, res) => {
     const postId = req.params.id;
     const { usuarioId, usuarioNome } = req.body;
@@ -440,8 +450,8 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
         if (index === -1) {
             curtidas.push(usuarioId);
             curtiu = true;
-            await criarNotificacao(postResult.rows[0].autor_id, usuarioId, usuarioNome, 'curtida', 'curtiu sua publicação');
-            await registrarAtividade(usuarioId, 'curtiu', `Curtiu uma publicação no feed`);
+            criarNotificacao(postResult.rows[0].autor_id, usuarioId, usuarioNome, 'curtida', 'curtiu sua publicação');
+            registrarAtividade(usuarioId, 'curtiu', `Curtiu uma publicação no feed`);
         } else {
             curtidas.splice(index, 1);
         }
@@ -453,7 +463,7 @@ app.post('/api/posts/:id/curtir', async (req, res) => {
     }
 });
 
-// 13. Comentar Post
+// 13. Comentar
 app.post('/api/posts/:id/comentar', async (req, res) => {
     const postId = req.params.id;
     const { autorId, autorNome, texto } = req.body;
@@ -467,8 +477,8 @@ app.post('/api/posts/:id/comentar', async (req, res) => {
         comentarios.push(novoComentario);
         await pool.query(`UPDATE posts SET comentarios = $1 WHERE id = $2`, [JSON.stringify(comentarios), postId]);
 
-        await criarNotificacao(postResult.rows[0].autor_id, autorId, autorNome, 'comentario', `comentou: "${texto.slice(0, 30)}..."`);
-        await registrarAtividade(autorId, 'comentou', `Comentou em uma publicação`);
+        criarNotificacao(postResult.rows[0].autor_id, autorId, autorNome, 'comentario', `comentou: "${texto.slice(0, 30)}..."`);
+        registrarAtividade(autorId, 'comentou', `Comentou em uma publicação`);
 
         res.status(201).json(novoComentario);
     } catch {
@@ -485,7 +495,7 @@ app.post('/api/stories', async (req, res) => {
              VALUES ($1, $2, $3, $4, $5) RETURNING *`,
             [autorId, autorNome, midiaUrl, midiaTipo, Date.now()]
         );
-        await registrarAtividade(autorId, 'story', `Publicou um Story de 24h`);
+        registrarAtividade(autorId, 'story', `Publicou um Story de 24h`);
         res.status(201).json(resultado.rows[0]);
     } catch {
         res.status(500).json({ erro: "Erro ao publicar Story." });
@@ -597,7 +607,7 @@ app.delete('/api/notificacoes/:usuarioId', async (req, res) => {
     }
 });
 
-// 17. Registro de Atividades do Usuário
+// 17. Atividades
 app.get('/api/atividades/:usuarioId', async (req, res) => {
     const usuarioId = parseInt(req.params.usuarioId);
     try {
@@ -611,7 +621,7 @@ app.get('/api/atividades/:usuarioId', async (req, res) => {
         const resultado = await pool.query(query, [usuarioId]);
         res.json(resultado.rows);
     } catch {
-        res.status(500).json({ erro: "Erro ao buscar histórico de atividades." });
+        res.status(500).json({ erro: "Erro ao buscar histórico." });
     }
 });
 
